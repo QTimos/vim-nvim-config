@@ -18,32 +18,38 @@ def g:Open_file_under_cursor_while_split()
 enddef
 
 def g:Popup_terminal()
-	hi link Terminal Search
 	var winwidth = &columns
 	var winheight = &lines
-	var termwidth: number = float2nr(winwidth * 0.8)
-	var termheight: number = float2nr(winheight * 0.8)
-	var buffer_handler = term_start('zsh', {
-		hidden: 1,
-		term_rows: termheight,
-		term_cols: termwidth,
-		term_finish: 'close'
-	})
-	var winid = popup_create(buffer_handler, {
-		minwidth: termwidth,
-		minheight: termheight,
-		maxwidth: termwidth,
-		maxheight: termheight,
-		drag: 1,
-		close: "button",
-		highlight: 'desert',
-		border: [1, 1, 1, 1],
-		pos: "center",
-		mapping: 1
-	})
-	execute "tnoremap <buffer> <Space><Esc> <C-\\><C-n>:call popup_close(" .. winid .. ")<CR>"
+	var termwidth = float2nr(winwidth * 0.8)
+	var termheight = float2nr(winheight * 0.8)
+	var buftype = &buftype
+	var buffer_handler = 0
+	var winid = -1
+	if buftype != 'popup'
+		buffer_handler = term_start('zsh', {
+			hidden: 1,
+			term_rows: termheight,
+			term_cols: termwidth,
+			term_finish: 'close'
+		})
+		winid = popup_create(buffer_handler, {
+			minwidth: termwidth,
+			minheight: termheight,
+			maxwidth: termwidth,
+			maxheight: termheight,
+			drag: 1,
+			close: "button",
+			highlight: 'normal',
+			border: [1, 1, 1, 1],
+			pos: "center",
+			mapping: 1
+		})
+		execute "tnoremap <buffer> <Space><Esc> <C-\\><C-n>:call popup_close(" .. winid .. ")<CR>"
+		execute "tnoremap <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
+	else
+		execute "call popup_close(" .. winid .. ")"
+	endif
 enddef
-
 
 def g:Open_file_under_cursor()
 	var filename = expand("<cfile>")
