@@ -6,7 +6,6 @@ def g:Open_file_tree()
 	:Ex
 enddef
 
-
 def g:Open_file_under_cursor_while_split()
 	var ii = expand("<cfile>:p")
 	if empty(ii)
@@ -78,6 +77,9 @@ augroup MyCustomMappings
 	autocmd TerminalOpen * tnoremap <buffer> <Leader><Esc> <C-\><C-n>:q!<CR>
 augroup END
 
+syntax on
+filetype on
+filetype plugin indent on
 set termguicolors
 highlight Normal guibg=NONE ctermbg=NONE
 highlight NonText guibg=NONE ctermbg=NONE
@@ -90,3 +92,4 @@ nnoremap <Leader>sc :source ~/.vimrc<CR>
 nnoremap <Leader>ft :call Open_file_tree()<CR>
 nnoremap <Leader>o :only<CR>
 nnoremap <Leader>ter :call Popup_terminal()<CR>
+nnoremap <Leader>man :!man <cword><CR>
