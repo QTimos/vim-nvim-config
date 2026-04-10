@@ -35,7 +35,9 @@ def g:Popup_terminal(command = "NONE")
 	var termheight = float2nr(winheight * 0.8)
 	var buftype = &buftype
 	if command == "NONE"
-		ccc = "zsh"
+		var shell_env_var = split(execute("echo $SHELL"), "/")
+		var shell = shell_env_var[-1]
+		ccc = shell
 	else
 		ccc = command
 		var buffer_handler = term_start(ccc, {
@@ -66,7 +68,7 @@ def g:Popup_terminal(command = "NONE")
 			term_finish: "close"
 		})
 	endif
-	if WINID == - 1
+	if WINID == -1
 		WINID = popup_create(BUFFER_HANDLER, {
 			minwidth: termwidth,
 			minheight: termheight,
@@ -127,10 +129,18 @@ def g:Copy_selected_text_to_clipboard()
 enddef
 
 def g:NetrwMaps()
-    silent! nunmap <buffer> <CR>
-    silent! nunmap <buffer> <Space>
-    nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor()<CR>
-    nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor_while_split()<CR>
+	silent! nunmap <buffer> <CR>
+	silent! nunmap <buffer> <Space>
+	silent! nunmap <buffer> <C-l>
+	silent! nunmap <buffer> <C-h>
+	silent! nunmap <buffer> <C-k>
+	silent! nunmap <buffer> <C-j>
+	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor()<CR>
+	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor_while_split()<CR>
+	nnoremap <silent> <C-l> <C-w>l
+	nnoremap <silent> <C-h> <C-w>h
+	nnoremap <silent> <C-k> <C-w>k
+	nnoremap <silent> <C-j> <C-w>j
 enddef
 augroup MyCustomMappings
     autocmd!
@@ -151,6 +161,11 @@ highlight Normal guibg=NONE ctermbg=NONE
 highlight NonText guibg=NONE ctermbg=NONE
 highlight EndOfBuffer guibg=NONE ctermbg=NONE
 
+nnoremap <silent> <C-l> <C-w>l
+nnoremap <silent> <C-h> <C-w>h
+nnoremap <silent> <C-k> <C-w>k
+nnoremap <silent> <C-j> <C-w>j
+
 nnoremap <silent> <Leader>n :next<CR>
 nnoremap <silent> <Leader>p :prev<CR>
 nnoremap <silent> <Leader>bf :Ex<CR>
@@ -162,3 +177,7 @@ nnoremap <silent> <Leader>man :call Popup_terminal("man " .. expand('<cword>') .
 tnoremap <silent> <Leader><Esc> <C-\><C-n>:q!<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
+
+tnoremap <silent> <Leader>qa :qa!<CR>
+nnoremap <silent> <Leader>qa :qa!<CR>
+vnoremap <silent> <Leader>qa :qa!<CR>
