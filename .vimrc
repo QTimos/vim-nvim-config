@@ -2,81 +2,147 @@ vim9script
 g:mapleader = ' '
 
 def g:Open_file_tree()
-	:25vs %
-	:Ex
-enddef
-
-def g:Open_file_under_cursor_while_split()
-	var ii = expand("<cfile>:p")
-	if empty(ii)
+	var buftypes = []
+	for i in range(1, winnr('$'))
+		add(buftypes, getwinvar(i, '&filetype'))
+	endfor
+	var tree_is_open = index(buftypes, 'netrw')
+	if tree_is_open != -1
+		echo "You already have a Explorer instance opened!!!"
 		return
 	endif
-	:wincmd l
-	execute "e " .. ii
-	:cd %:p:h
+	execute ":25vs %"
+	execute "Ex"
 enddef
 
-def g:Popup_terminal()
+var BUFFER_HANDLER = -1
+var WINID = -1
+def g:Close_terminal()
+	if WINID != -1
+		popup_close(WINID)
+		WINID = -1
+	endif
+	if BUFFER_HANDLER != -1
+		term_setkill(BUFFER_HANDLER, "kill")
+		BUFFER_HANDLER = -1
+	endif
+enddef
+def g:Popup_terminal(command = "NONE")
+	var ccc = ""
 	var winwidth = &columns
 	var winheight = &lines
 	var termwidth = float2nr(winwidth * 0.8)
 	var termheight = float2nr(winheight * 0.8)
 	var buftype = &buftype
-	var buffer_handler = 0
-	var winid = -1
-	if buftype != 'popup'
-		buffer_handler = term_start('zsh', {
+	if command == "NONE"
+		ccc = "zsh"
+	else
+		ccc = command
+		var buffer_handler = term_start(ccc, {
 			hidden: 1,
 			term_rows: termheight,
 			term_cols: termwidth,
-			term_finish: 'close'
+			term_finish: "close"
 		})
-		winid = popup_create(buffer_handler, {
+		var winid = popup_create(buffer_handler, {
 			minwidth: termwidth,
 			minheight: termheight,
 			maxwidth: termwidth,
 			maxheight: termheight,
 			drag: 1,
 			close: "button",
-			highlight: 'normal',
+			highlight: "normal",
 			border: [1, 1, 1, 1],
 			pos: "center",
 			mapping: 1
 		})
-		execute "tnoremap <buffer> <Space><Esc> <C-\\><C-n>:call popup_close(" .. winid .. ")<CR>"
-		execute "tnoremap <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
-	else
-		execute "call popup_close(" .. winid .. ")"
+		return
+	endif
+	if BUFFER_HANDLER == -1
+		BUFFER_HANDLER = term_start(ccc, {
+			hidden: 1,
+			term_rows: termheight,
+			term_cols: termwidth,
+			term_finish: "close"
+		})
+	endif
+	if WINID == - 1
+		WINID = popup_create(BUFFER_HANDLER, {
+			minwidth: termwidth,
+			minheight: termheight,
+			maxwidth: termwidth,
+			maxheight: termheight,
+			drag: 1, close: "button",
+			highlight: "normal",
+			border: [1, 1, 1, 1],
+			pos: "center",
+			mapping: 1
+		})
+		execute "tnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal()<CR>"
+		execute "tnoremap <silent> <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
+	elseif buftype == "terminal"
+		popup_close(WINID)
+		WINID = -1
 	endif
 enddef
 
-def g:Open_file_under_cursor()
-	var filename = expand("<cfile>")
+def g:Open_file_under_cursor_while_split()
+	var file_name = expand("<cfile>")
 	var directory = b:netrw_curdir
-	var full_path = directory .. "/" .. filename
-	if isdirectory(full_path)
-	execute "Ex " .. fnameescape(full_path)
-	return
+	var full_path = directory .. "/" .. file_name
+	echo file_name
+
+	if empty(full_path)
+		return
+	elseif isdirectory(full_path)
+		execute "Ex " .. fnameescape(full_path)
+		return
+	else
+		execute "wincmd l"
+		execute "e " .. file_name
+		execute "cd %:p:h"
 	endif
-	execute "e " .. fnameescape(full_path)
-	:only
-	:cd %:p:h
+
 enddef
+
+def g:Open_file_under_cursor()
+	var file_name = expand("<cfile>")
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. file_name
+
+	if isdirectory(full_path)
+		execute "Ex " .. fnameescape(full_path)
+		return
+	endif
+
+	execute "e " .. fnameescape(full_path)
+	execute "only"
+	execute "cd %:p:h"
+enddef
+
+def g:Copy_selected_text_to_clipboard()
+	execute "normal! gv\"vy"
+	var lines = getreg("v", 1, 1)
+	system("xclip -selection clipboard", lines)
+enddef
+
+def g:NetrwMaps()
+    silent! nunmap <buffer> <CR>
+    silent! nunmap <buffer> <Space>
+    nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor()<CR>
+    nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor_while_split()<CR>
+enddef
+augroup MyCustomMappings
+    autocmd!
+    autocmd FileType netrw g:NetrwMaps()
+augroup END
 
 set number
 set relativenumber
 set noswapfile
 execute "set mouse=a"
+
 colorscheme desert
-
-
-augroup MyCustomMappings
-	autocmd!
-	autocmd FileType netrw nnoremap <buffer> <CR> :call Open_file_under_cursor()<CR>
-	autocmd FileType netrw nnoremap <Leader> <CR> :call Open_file_under_cursor_while_split()<CR>
-	autocmd TerminalOpen * tnoremap <buffer> <Leader><Esc> <C-\><C-n>:q!<CR>
-augroup END
-
 syntax on
 filetype on
 filetype plugin indent on
@@ -85,11 +151,14 @@ highlight Normal guibg=NONE ctermbg=NONE
 highlight NonText guibg=NONE ctermbg=NONE
 highlight EndOfBuffer guibg=NONE ctermbg=NONE
 
-nnoremap <Leader>n :next<CR>
-nnoremap <Leader>p :prev<CR>
-nnoremap <Leader>bf :Ex<CR>
-nnoremap <Leader>sc :source ~/.vimrc<CR>
-nnoremap <Leader>ft :call Open_file_tree()<CR>
-nnoremap <Leader>o :only<CR>
-nnoremap <Leader>ter :call Popup_terminal()<CR>
-nnoremap <Leader>man :!man <cword><CR>
+nnoremap <silent> <Leader>n :next<CR>
+nnoremap <silent> <Leader>p :prev<CR>
+nnoremap <silent> <Leader>bf :Ex<CR>
+nnoremap <silent> <Leader>sc :source ~/.vimrc<CR>
+nnoremap <silent> <Leader>ft :call Open_file_tree()<CR>
+nnoremap <silent> <Leader>o :only<CR>
+nnoremap <silent> <Leader>ter :call Popup_terminal()<CR>
+nnoremap <silent> <Leader>man :call Popup_terminal("man " .. expand('<cword>') .. " \| cat")<CR>
+tnoremap <silent> <Leader><Esc> <C-\><C-n>:q!<CR>
+tnoremap <silent> <Esc> <C-\><C-n>
+vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
