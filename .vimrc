@@ -119,9 +119,9 @@ def g:Open_file_under_cursor_while_split()
 		execute "cd " .. fnameescape(full_path)
 		return
 	else
+		execute "cd %:p:h"
 		execute "wincmd l"
 		execute "e " .. file_name
-		execute "cd %:p:h"
 	endif
 
 enddef
@@ -137,9 +137,9 @@ def g:Open_file_under_cursor()
 		return
 	endif
 
+	execute "cd %:p:h"
 	execute "e " .. fnameescape(full_path)
 	execute "only"
-	execute "cd %:p:h"
 enddef
 
 def g:Open_file_under_cursor_in_vsplit()
@@ -210,6 +210,8 @@ def g:NetrwMaps()
 	silent! nunmap <buffer> <C-k>
 	silent! nunmap <buffer> <C-j>
 	silent! nunmap <buffer> %
+	silent! nunmap <buffer> v
+	nnoremap <buffer> <silent> :normal v<CR>
 	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor()<CR>
 	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor_while_split()<CR>
 	nnoremap <silent> <Leader>s<CR> :call Open_file_under_cursor_in_vsplit()<CR>
