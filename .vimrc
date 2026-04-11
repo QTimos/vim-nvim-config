@@ -111,12 +111,12 @@ def g:Open_file_under_cursor_while_split()
 	var file_name = expand("<cfile>")
 	var directory = b:netrw_curdir
 	var full_path = directory .. "/" .. file_name
-	echo file_name
 
 	if empty(full_path)
 		return
 	elseif isdirectory(full_path)
 		execute "Ex " .. fnameescape(full_path)
+		execute "cd " .. fnameescape(full_path)
 		return
 	else
 		execute "wincmd l"
@@ -133,6 +133,7 @@ def g:Open_file_under_cursor()
 
 	if isdirectory(full_path)
 		execute "Ex " .. fnameescape(full_path)
+		execute "cd " .. fnameescape(full_path)
 		return
 	endif
 
@@ -148,6 +149,7 @@ def g:Open_file_under_cursor_in_vsplit()
 
 	if isdirectory(full_path)
 		execute "Ex " .. fnameescape(full_path)
+		execute "cd " .. fnameescape(full_path)
 		return
 	endif
 
@@ -169,6 +171,37 @@ def g:Copy_selected_text_to_clipboard()
 	system("xclip -selection clipboard", lines)
 enddef
 
+def g:Create_new_file()
+	var f_name = input("\nInput the name of the file/directory (directories must end with a /): ", "", "file")
+	if empty(f_name) || f_name !~ '\S'
+		echo "\nFile or Directory name must not be empty or contain only spaces!!!"
+		return
+	endif
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. f_name
+	var file_exists = system("if \[ \-f \"" .. full_path .. "\" \]; then echo \"true\"; else echo \"false\"; fi")
+
+	if file_exists == "true\n" || isdirectory(full_path)
+		 echo "\nFile or Directory already exists!!!"
+		return
+	endif
+	if f_name[-1] == "/"
+		var ret_str = system("mkdir " .. full_path)
+		if !empty(ret_str)
+			echo "\nYou don't have the required premissions to create this directory!!"
+			return
+		endif
+	else
+		var ret_str = system("touch " .. full_path)
+		if !empty(ret_str)
+			echo "\nYou don't have the required premissions to create this file!!"
+			return
+		endif
+	endif
+	call feedkeys("<CR>", 'n')
+	execute "Ex"
+enddef
+
 def g:NetrwMaps()
 	silent! nunmap <buffer> <CR>
 	silent! nunmap <buffer> <Space>
@@ -176,9 +209,11 @@ def g:NetrwMaps()
 	silent! nunmap <buffer> <C-h>
 	silent! nunmap <buffer> <C-k>
 	silent! nunmap <buffer> <C-j>
-	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor()<CR>
-	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor_while_split()<CR>
+	silent! nunmap <buffer> %
+	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor()<CR>
+	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor_while_split()<CR>
 	nnoremap <silent> <Leader>s<CR> :call Open_file_under_cursor_in_vsplit()<CR>
+	nnoremap <silent> <nowait> % :call Create_new_file()<CR>
 	nnoremap <silent> <C-l> <C-w>l
 	nnoremap <silent> <C-h> <C-w>h
 	nnoremap <silent> <C-k> <C-w>k
