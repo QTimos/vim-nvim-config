@@ -141,6 +141,28 @@ def g:Open_file_under_cursor()
 	execute "cd %:p:h"
 enddef
 
+def g:Open_file_under_cursor_in_vsplit()
+	var file_name = expand("<cfile>")
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. file_name
+
+	if isdirectory(full_path)
+		execute "Ex " .. fnameescape(full_path)
+		return
+	endif
+
+	execute "wincmd l"
+	execute "vs " .. fnameescape(full_path)
+
+	var thisbuf = bufnr("%")
+	var lastwin = winnr("#")
+	var lastbuf = winbufnr(lastwin)
+
+	execute "buffer " .. lastbuf
+	execute "wincmd l"
+	execute "buffer " .. thisbuf
+enddef
+
 def g:Copy_selected_text_to_clipboard()
 	execute "normal! gv\"vy"
 	var lines = getreg("v", 1, 1)
@@ -156,6 +178,7 @@ def g:NetrwMaps()
 	silent! nunmap <buffer> <C-j>
 	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor()<CR>
 	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor_while_split()<CR>
+	nnoremap <silent> <Leader>s<CR> :call Open_file_under_cursor_in_vsplit()<CR>
 	nnoremap <silent> <C-l> <C-w>l
 	nnoremap <silent> <C-h> <C-w>h
 	nnoremap <silent> <C-k> <C-w>k
