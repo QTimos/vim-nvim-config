@@ -4,7 +4,8 @@ g:mapleader = ' '
 def g:Open_file_tree()
 	var buftypes = []
 	for i in range(1, winnr('$'))
-		add(buftypes, getwinvar(i, '&filetype')) endfor
+		add(buftypes, getwinvar(i, '&filetype'))
+	endfor
 	var tree_is_open = index(buftypes, 'netrw')
 	if tree_is_open != -1
 		echo "You already have a Explorer instance opened!!!"
@@ -48,6 +49,7 @@ def g:Popup_terminal(command = "NONE")
 	if command == "NONE"
 		var shell_env_var = split(execute("echo $SHELL"), "/")
 		var shell = shell_env_var[-1]
+		var buff_was_open = 0
 		ccc = shell
 		if BUFFER_HANDLER == -1
 			BUFFER_HANDLER = term_start(ccc, {
@@ -56,6 +58,8 @@ def g:Popup_terminal(command = "NONE")
 				term_cols: termwidth,
 				term_finish: "close"
 			})
+		else
+			buff_was_open = 1
 		endif
 		if WINID == -1
 			WINID = popup_create(BUFFER_HANDLER, {
@@ -70,10 +74,15 @@ def g:Popup_terminal(command = "NONE")
 				mapping: 1
 			})
 			execute "tnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
+			execute "nnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
 			execute "tnoremap <silent> <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
 		elseif buftype == "terminal"
 			popup_close(WINID)
 			WINID = -1
+			return
+		endif
+		if buff_was_open == 1
+			call feedkeys("i", 'n')
 		endif
 	else
 		ccc = command
@@ -123,7 +132,8 @@ def g:Open_file_under_cursor()
 	var full_path = directory .. "/" .. file_name
 
 	if isdirectory(full_path)
-		execute "Ex " .. fnameescape(full_path) return
+		execute "Ex " .. fnameescape(full_path)
+		return
 	endif
 
 	execute "e " .. fnameescape(full_path)
@@ -152,8 +162,8 @@ def g:NetrwMaps()
 	nnoremap <silent> <C-j> <C-w>j
 enddef
 augroup MyCustomMappings
-    autocmd!
-    autocmd FileType netrw g:NetrwMaps()
+	autocmd!
+	autocmd FileType netrw g:NetrwMaps()
 augroup END
 
 set number
