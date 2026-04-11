@@ -1,6 +1,29 @@
 vim9script
 g:mapleader = ' '
 
+
+def g:Forty_Two_pattern()
+	var file_name = execute("echo @%")
+	var user_name = system("echo $USER")
+	var file_creation_time = system("")
+	var file_update_time = system("")
+	var lines = [
+		"/* ************************************************************************** */",
+		"/*                                                                            */",
+		"/*                                                        :::      ::::::::   */",
+		"/*   codexion.h                                         :+:      :+:    :+:   */",
+		"/*                                                    +:+ +:+         +:+     */",
+		"/*   By: hdyani <marvin@42.fr>                      +#+  +:+       +#+        */",
+		"/*                                                +#+#+#+#+#+   +#+           */",
+		"/*   Created: 2026/04/01 15:45:19 by hdyani            #+#    #+#             */",
+		"/*   Updated: 2026/04/01 15:45:19 by hdyani           ###   ########.fr       */",
+		"/*                                                                            */",
+		"/* ************************************************************************** */"
+		]
+enddef
+nnoremap <Leader><C-g> :call Forty_Two_pattern()<CR>
+
+
 def g:Open_file_tree()
 	var buftypes = []
 	for i in range(1, winnr('$'))
