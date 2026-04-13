@@ -96,6 +96,18 @@ def g:Popup_terminal(command = "NONE")
 				pos: "center",
 				mapping: 1
 			})
+
+			execute "silent! tunmap <buffer> <C-k>"
+			execute "silent! tunmap <buffer> <C-j>"
+			execute "silent! tunmap <buffer> <C-h>"
+			execute "silent! tunmap <buffer> <C-l>"
+
+			execute "tnoremap <buffer> <C-k> \<Esc>OA"
+			execute "tnoremap <buffer> <C-j> \<Esc>OB"
+			execute "tnoremap <buffer> <C-h> \<Esc>OD"
+			execute "tnoremap <buffer> <C-l> \<Esc>OC"
+
+
 			execute "tnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
 			execute "nnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
 			execute "tnoremap <silent> <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
