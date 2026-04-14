@@ -2,26 +2,90 @@ vim9script
 g:mapleader = ' '
 
 
+
+
+def g:Get_file_update_time_string(file: string): string
+	var last_update_time = ""
+	var date = substitute(substitute(system("stat --format=%y " .. file .. " \| awk '{ print $1 }'"), '-', '/', 'g'), '\n', '', '')
+	var time = system("stat --format=%y " .. file .. " \| cut -d. -f1 \| awk '{ print $2 }'")
+	last_update_time = join([date, time], ' ')
+	if empty(last_update_time)
+		return "" 
+	endif
+	var string = join(["Updated: ", substitute(last_update_time, "\n", "", ""), " by"], '')
+	return string
+enddef
+def g:Get_file_creation_time_string(file: string): string
+	var creation_time = ""
+	var date = substitute(substitute(system("stat --format=%w " .. file .. " \| awk '{ print $1 }'"), '-', '/', 'g'), '\n', '', '')
+	var time = system("stat --format=%w " .. file .. " \| cut -d. -f1 \| awk '{ print $2 }'")
+	creation_time = join([date, time], ' ')
+	if empty(creation_time)
+		return "" 
+	endif
+	var string = join(["Created: ", substitute(creation_time, "\n", "", ""), " by"], '')
+	return string
+enddef
 def g:Forty_Two_pattern()
-	var file_name = execute("echo @%")
 	var user_name = system("echo $USER")
-	var file_creation_time = system("")
-	var file_update_time = system("")
+	var file_name = substitute(execute("echo @%"), '\n', '', '')
+	var file_directory = substitute(execute("pwd"), '\n', '', '')
+	var full_path = join([file_directory, file_name], '/')
+	var file_exists = system("if \[ \-f \"" .. full_path .. "\" \]; then echo \"true\"; else echo \"false\"; fi")
+
+	if !file_exists
+		echo "File does not exist!!"
+		return
+	endif
+	if empty(user_name)
+		return
+	endif
+	var file_creation_time_string = g:Get_file_creation_time_string(full_path)
+	var file_update_time_string = g:Get_file_update_time_string(full_path)
+	if empty(file_creation_time_string) || empty(file_update_time_string)
+		return
+	endif
+	var num_of_spaces_after_filename = 10
+	var filename_string = ""
+	if strlen(file_name) >= 41
+		filename_string = file_name[0 : 40]
+	else
+		filename_string = file_name
+		num_of_spaces_after_filename = 10 + (strlen(file_name) - 41)
+	endif
+	var username_string = ""
+	var num_of_spaces_after_name_in_file_info1 = 9
+	var num_of_spaces_after_name_in_file_info2 = 8
+	var num_of_spaces_after_mail = 19
+	if strlen(user_name) >= 9
+		username_string = user_name[0 : 8]
+	else
+		username_string = user_name
+		num_of_spaces_after_name_in_file_info1 = 9 + (strlen(file_name) - 9)
+		num_of_spaces_after_name_in_file_info2 = 8 + (strlen(file_name) - 9)
+		num_of_spaces_after_mail = 19 + (strlen(file_name) - 9)
+	endif
+	var spaces_after_filename = repeat(" ", num_of_spaces_after_filename)
+	var spaces_after_mail = repeat(" ", num_of_spaces_after_mail)
+	var spaces_after_name_in_file_info1 = repeat(" ", num_of_spaces_after_name_in_file_info1)
+	var spaces_after_name_in_file_info2 = repeat(" ", num_of_spaces_after_name_in_file_info2)
 	var lines = [
-		"/* ************************************************************************** */",
-		"/*                                                                            */",
-		"/*                                                        :::      ::::::::   */",
-		"/*   codexion.h                                         :+:      :+:    :+:   */",
-		"/*                                                    +:+ +:+         +:+     */",
-		"/*   By: hdyani <marvin@42.fr>                      +#+  +:+       +#+        */",
-		"/*                                                +#+#+#+#+#+   +#+           */",
-		"/*   Created: 2026/04/01 15:45:19 by hdyani            #+#    #+#             */",
-		"/*   Updated: 2026/04/01 15:45:19 by hdyani           ###   ########.fr       */",
-		"/*                                                                            */",
-		"/* ************************************************************************** */"
+		"/* ************************************************************************** */\n",
+		"/*                                                                            */\n",
+		"/*                                                        :::      ::::::::   */\n",
+		join(["/*   ", substitute(filename_string, "\n", "", "g"), substitute(spaces_after_filename, "\n", "", "g"), ":+:      :+:    :+:   */\n"], ""),
+		"/*                                                    +:+ +:+         +:+     */\n",
+		join(["/*   By: ", substitute(username_string, "\n", "", "g"), " <marvin@42.fr>", substitute(spaces_after_mail, "\n", "", "g"), "+#+  +:+       +#+        */\n"], ""),
+		"/*                                                +#+#+#+#+#+   +#+           */\n",
+		join(["/*   ", substitute(file_creation_time_string, "\n", "", "g"), " by ", substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info1, "\n", "", "g"), "#+#    #+#             */\n"], ""),
+		join(["/*   ", substitute(file_update_time_string, "\n", "", "g"), " by ", substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info2, "\n", "", "g"), "###   ########.fr       */\n"], ""),
+		"/*                                                                            */\n",
+		"/* ************************************************************************** */\n"
 		]
+	echo lines
 enddef
 nnoremap <Leader><C-g> :call Forty_Two_pattern()<CR>
+
 
 
 def g:Open_file_tree()
@@ -34,7 +98,7 @@ def g:Open_file_tree()
 		echo "You already have a Explorer instance opened!!!"
 		return
 	endif
-	execute ":25vs %"
+	execute ":25vsplit"
 	execute "Ex"
 enddef
 
@@ -264,6 +328,7 @@ augroup END
 set number
 set relativenumber
 set noswapfile
+set showcmd
 execute "set mouse=a"
 
 colorscheme desert
