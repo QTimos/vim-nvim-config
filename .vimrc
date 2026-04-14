@@ -12,7 +12,7 @@ def g:Get_file_update_time_string(file: string): string
 	if empty(last_update_time)
 		return "" 
 	endif
-	var string = join(["Updated: ", substitute(last_update_time, "\n", "", ""), " by"], '')
+	var string = join(["Updated: ", substitute(last_update_time, "\n", "", ""), " by "], '')
 	return string
 enddef
 def g:Get_file_creation_time_string(file: string): string
@@ -23,8 +23,58 @@ def g:Get_file_creation_time_string(file: string): string
 	if empty(creation_time)
 		return "" 
 	endif
-	var string = join(["Created: ", substitute(creation_time, "\n", "", ""), " by"], '')
+	var string = join(["Created: ", substitute(creation_time, "\n", "", ""), " by "], '')
 	return string
+enddef
+def g:Get_filename_line(file_name: string): string
+	var filename_string = ""
+	var num_of_spaces_after_filename = 10
+	if strlen(file_name) > 41
+		filename_string = file_name[: 40]
+	else
+		filename_string = file_name
+		num_of_spaces_after_filename = 10 + (41 - strlen(file_name))
+	endif
+	var spaces_after_filename = repeat(" ", num_of_spaces_after_filename)
+	return join(["/*   ", substitute(filename_string, "\n", "", "g"), substitute(spaces_after_filename, "\n", "", "g"), ":+:      :+:    :+:   */"], "")
+enddef
+def g:Get_mail_line(user_name: string): string
+	var username_string = ""
+	var num_of_spaces_after_mail = 19
+	if strlen(user_name) > 9
+		username_string = user_name[: 8]
+	else
+		username_string = user_name
+		num_of_spaces_after_mail = 19 + (10 - strlen(user_name))
+	endif
+	var spaces_after_mail = repeat(" ", num_of_spaces_after_mail)
+	return join(["/*   By: ", substitute(username_string, "\n", "", "g"), " <marvin@42.fr>", substitute(spaces_after_mail, "\n", "", "g"), "+#+  +:+       +#+        */"], "")
+enddef
+def g:Get_created_line(user_name: string, full_path: string): string
+	var username_string = ""
+	var file_creation_time_string = g:Get_file_creation_time_string(full_path)
+	var num_of_spaces_after_name_in_file_info1 = 9
+	if strlen(user_name) > 9
+		username_string = user_name[: 8]
+	else
+		username_string = user_name
+		num_of_spaces_after_name_in_file_info1 = 9 + (10 - strlen(user_name))
+	endif
+	var spaces_after_name_in_file_info1 = repeat(" ", num_of_spaces_after_name_in_file_info1)
+	return join(["/*   ", substitute(file_creation_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info1, "\n", "", "g"), "#+#    #+#             */"], "")
+enddef
+def g:Get_updated_line(user_name: string, full_path: string): string
+	var username_string = ""
+	var num_of_spaces_after_name_in_file_info2 = 8
+	var file_update_time_string = g:Get_file_update_time_string(full_path)
+	if strlen(user_name) > 9
+		username_string = user_name[: 8]
+	else
+		username_string = user_name
+		num_of_spaces_after_name_in_file_info2 = 8 + (10 - strlen(user_name))
+	endif
+	var spaces_after_name_in_file_info2 = repeat(" ", num_of_spaces_after_name_in_file_info2)
+	return join(["/*   ", substitute(file_update_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info2, "\n", "", "g"), "###   ########.fr       */"], "")
 enddef
 def g:Forty_Two_pattern()
 	var user_name = system("echo $USER")
@@ -40,49 +90,41 @@ def g:Forty_Two_pattern()
 	if empty(user_name)
 		return
 	endif
-	var file_creation_time_string = g:Get_file_creation_time_string(full_path)
-	var file_update_time_string = g:Get_file_update_time_string(full_path)
-	if empty(file_creation_time_string) || empty(file_update_time_string)
-		return
-	endif
-	var num_of_spaces_after_filename = 10
-	var filename_string = ""
-	if strlen(file_name) >= 41
-		filename_string = file_name[0 : 40]
-	else
-		filename_string = file_name
-		num_of_spaces_after_filename = 10 + (strlen(file_name) - 41)
-	endif
-	var username_string = ""
-	var num_of_spaces_after_name_in_file_info1 = 9
-	var num_of_spaces_after_name_in_file_info2 = 8
-	var num_of_spaces_after_mail = 19
-	if strlen(user_name) >= 9
-		username_string = user_name[0 : 8]
-	else
-		username_string = user_name
-		num_of_spaces_after_name_in_file_info1 = 9 + (strlen(file_name) - 9)
-		num_of_spaces_after_name_in_file_info2 = 8 + (strlen(file_name) - 9)
-		num_of_spaces_after_mail = 19 + (strlen(file_name) - 9)
-	endif
-	var spaces_after_filename = repeat(" ", num_of_spaces_after_filename)
-	var spaces_after_mail = repeat(" ", num_of_spaces_after_mail)
-	var spaces_after_name_in_file_info1 = repeat(" ", num_of_spaces_after_name_in_file_info1)
-	var spaces_after_name_in_file_info2 = repeat(" ", num_of_spaces_after_name_in_file_info2)
+	var file_extention = ""
+
+	var comm_beg = ""
+	var comm_end = ""
+	var extention_beg_equ = {
+		".c": "/*",
+		".cpp": "/*",
+		}
+	var extention_end_equ = {
+		".c": "*/",
+		".cpp": "*/",
+		}
+	var filename_line = g:Get_filename_line(file_name)
+	var mail_line = g:Get_mail_line(user_name)
+	var created_line = g:Get_created_line(user_name, full_path)
+	var updated_line = g:Get_updated_line(user_name, full_path)
 	var lines = [
-		"/* ************************************************************************** */\n",
-		"/*                                                                            */\n",
-		"/*                                                        :::      ::::::::   */\n",
-		join(["/*   ", substitute(filename_string, "\n", "", "g"), substitute(spaces_after_filename, "\n", "", "g"), ":+:      :+:    :+:   */\n"], ""),
-		"/*                                                    +:+ +:+         +:+     */\n",
-		join(["/*   By: ", substitute(username_string, "\n", "", "g"), " <marvin@42.fr>", substitute(spaces_after_mail, "\n", "", "g"), "+#+  +:+       +#+        */\n"], ""),
-		"/*                                                +#+#+#+#+#+   +#+           */\n",
-		join(["/*   ", substitute(file_creation_time_string, "\n", "", "g"), " by ", substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info1, "\n", "", "g"), "#+#    #+#             */\n"], ""),
-		join(["/*   ", substitute(file_update_time_string, "\n", "", "g"), " by ", substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info2, "\n", "", "g"), "###   ########.fr       */\n"], ""),
-		"/*                                                                            */\n",
-		"/* ************************************************************************** */\n"
+		"/* ************************************************************************** */",
+		"/*                                                                            */",
+		"/*                                                        :::      ::::::::   */",
+		filename_line,
+		"/*                                                    +:+ +:+         +:+     */",
+		mail_line,
+		"/*                                                +#+#+#+#+#+   +#+           */",
+		created_line,
+		updated_line,
+		"/*                                                                            */",
+		"/* ************************************************************************** */",
+		""
 		]
-	echo lines
+	var index = len(lines) - 1
+	while index >= 0
+		append(0, lines[index])
+		index = index - 1
+	endwhile
 enddef
 nnoremap <Leader><C-g> :call Forty_Two_pattern()<CR>
 
