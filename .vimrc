@@ -110,6 +110,7 @@ def g:Pattern_update()
 	var full_path = ""
 	var has_pattern = true
 	var lines = [] 
+	var filename_line = ""
 	var mail_line = ""
 	var created_line = ""
 	var updated_line = ""
@@ -124,23 +125,20 @@ def g:Pattern_update()
 		file_directory = substitute(execute("pwd"), '\n', '', '')
 		full_path = join([file_directory, file_name], '/')
 		has_pattern = false
-		lines = readfile(full_path)[: 10]
-		mail_line = lines[5]
-		created_line = lines[7]
-		updated_line = lines[8]
+		filename_line = getline(4)
+		mail_line = getline(6)
+		created_line = getline(8)
+		updated_line = getline(9)
 		updated_line_str = g:Get_updated_line(user_name, full_path)
+		var filename_line_str = g:Get_filename_line(file_name)
 		if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
 			return
 		else
+			setline(4, filename_line_str)
 			setline(9, updated_line_str)
 		endif
 	catch
-		var exception = v:exception
-		if g:Str_in_str(exception, "E684")
-			return
-		else
-			return
-		endif
+		return
 	endtry
 enddef
 def g:Forty_Two_pattern()
@@ -183,20 +181,16 @@ def g:Forty_Two_pattern()
 
 
 	try
-		var lines = readfile(full_path)[: 10]
-		var mail_line = lines[5]
-		var created_line = lines[7]
-		var updated_line = lines[8]
+		var mail_line = getline(5)
+		var created_line = getline(7)
+		var updated_line = getline(8)
 		var updated_line_str = g:Get_updated_line(user_name, full_path)
 		if g:Str_in_str(mail_line, "By") && g:Str_in_str(created_line, "Created") && g:Str_in_str(updated_line, "Updated")
 			g:Pattern_update()
 			return
 		endif
 	catch
-		var exception = v:exception
-		if !g:Str_in_str(exception, "E684")
-			return
-		endif
+		return
 	endtry
 
 
