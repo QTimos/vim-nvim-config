@@ -105,21 +105,30 @@ def g:Get_updated_line(user_name: string, full_path: string): string
 enddef
 def g:Pattern_update()
 	var user_name = ""
+	var file_name = ""
+	var file_directory = ""
+	var full_path = ""
+	var has_pattern = true
+	var lines = [] 
+	var mail_line = ""
+	var created_line = ""
+	var updated_line = ""
+	var updated_line_str = ""
 	if empty(USER)
 		user_name = system("echo $USER")
 	else
 		user_name = USER
 	endif
-	var file_name = substitute(execute("echo @%"), '\n', '', '')
-	var file_directory = substitute(execute("pwd"), '\n', '', '')
-	var full_path = join([file_directory, file_name], '/')
-	var has_pattern = false
-	var lines = readfile(full_path)[: 10]
 	try
-		var mail_line = lines[5]
-		var created_line = lines[7]
-		var updated_line = lines[8]
-		var updated_line_str = g:Get_updated_line(user_name, full_path)
+		file_name = substitute(execute("echo @%"), '\n', '', '')
+		file_directory = substitute(execute("pwd"), '\n', '', '')
+		full_path = join([file_directory, file_name], '/')
+		has_pattern = false
+		lines = readfile(full_path)[: 10]
+		mail_line = lines[5]
+		created_line = lines[7]
+		updated_line = lines[8]
+		updated_line_str = g:Get_updated_line(user_name, full_path)
 		if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
 			return
 		else
@@ -129,25 +138,41 @@ def g:Pattern_update()
 		var exception = v:exception
 		if g:Str_in_str(exception, "E684")
 			return
+		else
+			return
 		endif
 	endtry
 enddef
 def g:Forty_Two_pattern()
 	var user_name = ""
+	var file_name = ""
+	var file_directory = ""
+	var full_path = ""
+	var file_exists = ""
 	if empty(USER)
 		user_name = system("echo $USER")
 	else
 		user_name = USER
 	endif
-	var file_name = substitute(execute("echo @%"), '\n', '', '')
-	var file_directory = substitute(execute("pwd"), '\n', '', '')
-	var full_path = join([file_directory, file_name], '/')
-	var file_exists = system("if \[ \-f \"" .. full_path .. "\" \]; then echo \"true\"; else echo \"false\"; fi")
 
-	if !file_exists
+
+	try
+		file_name = substitute(execute("echo @%"), '\n', '', '')
+		file_directory = substitute(execute("pwd"), '\n', '', '')
+		full_path = join([file_directory, file_name], '/')
+		file_exists = system("if \[ \-f \"" .. full_path .. "\" \]; then echo \"true\"; else echo \"false\"; fi")
+
+		if !file_exists
+			echo "File does not exist!!"
+			return
+		endif
+	catch
 		echo "File does not exist!!"
 		return
-	endif
+	endtry
+
+
+
 	if empty(user_name)
 		return
 	endif
