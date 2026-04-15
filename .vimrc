@@ -4,6 +4,7 @@ g:mapleader = ' '
 
 
 
+var USER =  "hdyani"
 def g:Get_file_update_time_string(file: string): string
 	var last_update_time = ""
 	var date = substitute(substitute(system("stat --format=%y " .. file .. " \| awk '{ print $1 }'"), '-', '/', 'g'), '\n', '', '')
@@ -45,7 +46,7 @@ def g:Get_mail_line(user_name: string): string
 		username_string = user_name[: 8]
 	else
 		username_string = user_name
-		num_of_spaces_after_mail = 19 + (10 - strlen(user_name))
+		num_of_spaces_after_mail = 19 + (9 - strlen(user_name))
 	endif
 	var spaces_after_mail = repeat(" ", num_of_spaces_after_mail)
 	return join(["/*   By: ", substitute(username_string, "\n", "", "g"), " <marvin@42.fr>", substitute(spaces_after_mail, "\n", "", "g"), "+#+  +:+       +#+        */"], "")
@@ -58,7 +59,7 @@ def g:Get_created_line(user_name: string, full_path: string): string
 		username_string = user_name[: 8]
 	else
 		username_string = user_name
-		num_of_spaces_after_name_in_file_info1 = 9 + (10 - strlen(user_name))
+		num_of_spaces_after_name_in_file_info1 = 9 + (9 - strlen(user_name))
 	endif
 	var spaces_after_name_in_file_info1 = repeat(" ", num_of_spaces_after_name_in_file_info1)
 	return join(["/*   ", substitute(file_creation_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info1, "\n", "", "g"), "#+#    #+#             */"], "")
@@ -71,13 +72,18 @@ def g:Get_updated_line(user_name: string, full_path: string): string
 		username_string = user_name[: 8]
 	else
 		username_string = user_name
-		num_of_spaces_after_name_in_file_info2 = 8 + (10 - strlen(user_name))
+		num_of_spaces_after_name_in_file_info2 = 8 + (9 - strlen(user_name))
 	endif
 	var spaces_after_name_in_file_info2 = repeat(" ", num_of_spaces_after_name_in_file_info2)
 	return join(["/*   ", substitute(file_update_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info2, "\n", "", "g"), "###   ########.fr       */"], "")
 enddef
 def g:Forty_Two_pattern()
-	var user_name = system("echo $USER")
+	var user_name = ""
+	if empty(USER)
+		user_name = system("echo $USER")
+	else
+		user_name = USER
+	endif
 	var file_name = substitute(execute("echo @%"), '\n', '', '')
 	var file_directory = substitute(execute("pwd"), '\n', '', '')
 	var full_path = join([file_directory, file_name], '/')
@@ -90,18 +96,11 @@ def g:Forty_Two_pattern()
 	if empty(user_name)
 		return
 	endif
-	var file_extention = ""
+	var file_extention = file_name[-2 : -1]
+	if file_extention != ".c"
+		return
+	endif
 
-	var comm_beg = ""
-	var comm_end = ""
-	var extention_beg_equ = {
-		".c": "/*",
-		".cpp": "/*",
-		}
-	var extention_end_equ = {
-		".c": "*/",
-		".cpp": "*/",
-		}
 	var filename_line = g:Get_filename_line(file_name)
 	var mail_line = g:Get_mail_line(user_name)
 	var created_line = g:Get_created_line(user_name, full_path)
@@ -126,7 +125,55 @@ def g:Forty_Two_pattern()
 		index = index - 1
 	endwhile
 enddef
-nnoremap <Leader><C-g> :call Forty_Two_pattern()<CR>
+def g:Str_in_str(str: string, pattern: string): bool
+	var i = 0
+	var str_len = strlen(str)
+	var pattern_len = strlen(pattern)
+	while i < str_len
+		if str[i] == pattern[0]
+			var j = 0
+			while j < pattern_len
+				if str[i] != pattern[j]
+					break
+				endif
+				i += 1
+				j += 1
+			endwhile
+			if j == pattern_len
+				return true
+			endif
+		endif
+		i += 1
+	endwhile
+	return false
+enddef
+def g:Pattern_update()
+	var user_name = ""
+	if empty(USER)
+		user_name = system("echo $USER")
+	else
+		user_name = USER
+	endif
+	var file_name = substitute(execute("echo @%"), '\n', '', '')
+	var file_directory = substitute(execute("pwd"), '\n', '', '')
+	var full_path = join([file_directory, file_name], '/')
+	var has_pattern = false
+	var lines = readfile(full_path)[: 10]
+	var mail_line = lines[5]
+	var created_line = lines[7]
+	var updated_line = lines[8]
+	var updated_line_str = g:Get_updated_line(user_name, full_path)
+	if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
+		g:Forty_Two_pattern()
+		return
+	else
+		setline(9, updated_line_str)
+	endif
+enddef
+augroup FtPatterMappings
+	autocmd!
+	autocmd BufWritePre * g:Pattern_update()
+augroup END
 
 
 
