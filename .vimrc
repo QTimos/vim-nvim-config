@@ -3,6 +3,32 @@ g:mapleader = ' '
 
 
 
+def g:Str_in_str(str: string, pattern: string): bool
+	var i = 0
+	var str_len = strlen(str)
+	var pattern_len = strlen(pattern)
+	while i < str_len
+		if str[i] == pattern[0]
+			var j = 0
+			while j < pattern_len
+				if str[i] != pattern[j]
+					break
+				endif
+				i += 1
+				j += 1
+			endwhile
+			if j == pattern_len
+				return true
+			endif
+		endif
+		i += 1
+	endwhile
+	return false
+enddef
+
+
+
+
 
 var USER =  "hdyani"
 def g:Get_file_update_time_string(file: string): string
@@ -77,6 +103,35 @@ def g:Get_updated_line(user_name: string, full_path: string): string
 	var spaces_after_name_in_file_info2 = repeat(" ", num_of_spaces_after_name_in_file_info2)
 	return join(["/*   ", substitute(file_update_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info2, "\n", "", "g"), "###   ########.fr       */"], "")
 enddef
+def g:Pattern_update()
+	var user_name = ""
+	if empty(USER)
+		user_name = system("echo $USER")
+	else
+		user_name = USER
+	endif
+	var file_name = substitute(execute("echo @%"), '\n', '', '')
+	var file_directory = substitute(execute("pwd"), '\n', '', '')
+	var full_path = join([file_directory, file_name], '/')
+	var has_pattern = false
+	var lines = readfile(full_path)[: 10]
+	try
+		var mail_line = lines[5]
+		var created_line = lines[7]
+		var updated_line = lines[8]
+		var updated_line_str = g:Get_updated_line(user_name, full_path)
+		if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
+			return
+		else
+			setline(9, updated_line_str)
+		endif
+	catch
+		var exception = v:exception
+		if g:Str_in_str(exception, "E684")
+			return
+		endif
+	endtry
+enddef
 def g:Forty_Two_pattern()
 	var user_name = ""
 	if empty(USER)
@@ -100,6 +155,26 @@ def g:Forty_Two_pattern()
 	if file_extention != ".c"
 		return
 	endif
+
+
+	try
+		var lines = readfile(full_path)[: 10]
+		var mail_line = lines[5]
+		var created_line = lines[7]
+		var updated_line = lines[8]
+		var updated_line_str = g:Get_updated_line(user_name, full_path)
+		if g:Str_in_str(mail_line, "By") && g:Str_in_str(created_line, "Created") && g:Str_in_str(updated_line, "Updated")
+			g:Pattern_update()
+			return
+		endif
+	catch
+		var exception = v:exception
+		if !g:Str_in_str(exception, "E684")
+			return
+		endif
+	endtry
+
+
 
 	var filename_line = g:Get_filename_line(file_name)
 	var mail_line = g:Get_mail_line(user_name)
@@ -125,55 +200,18 @@ def g:Forty_Two_pattern()
 		index = index - 1
 	endwhile
 enddef
-def g:Str_in_str(str: string, pattern: string): bool
-	var i = 0
-	var str_len = strlen(str)
-	var pattern_len = strlen(pattern)
-	while i < str_len
-		if str[i] == pattern[0]
-			var j = 0
-			while j < pattern_len
-				if str[i] != pattern[j]
-					break
-				endif
-				i += 1
-				j += 1
-			endwhile
-			if j == pattern_len
-				return true
-			endif
-		endif
-		i += 1
-	endwhile
-	return false
-enddef
-def g:Pattern_update()
-	var user_name = ""
-	if empty(USER)
-		user_name = system("echo $USER")
-	else
-		user_name = USER
-	endif
-	var file_name = substitute(execute("echo @%"), '\n', '', '')
-	var file_directory = substitute(execute("pwd"), '\n', '', '')
-	var full_path = join([file_directory, file_name], '/')
-	var has_pattern = false
-	var lines = readfile(full_path)[: 10]
-	var mail_line = lines[5]
-	var created_line = lines[7]
-	var updated_line = lines[8]
-	var updated_line_str = g:Get_updated_line(user_name, full_path)
-	if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
-		g:Forty_Two_pattern()
-		return
-	else
-		setline(9, updated_line_str)
-	endif
-enddef
 augroup FtPatterMappings
 	autocmd!
 	autocmd BufWritePre * g:Pattern_update()
 augroup END
+
+
+
+
+
+
+
+
 
 
 
@@ -190,6 +228,12 @@ def g:Open_file_tree()
 	execute ":25vsplit"
 	execute "Ex"
 enddef
+
+
+
+
+
+
 
 var BUFFER_HANDLER = -1
 var WINID = -1
@@ -445,6 +489,7 @@ nnoremap <silent> <Leader>man :call Popup_terminal("man " .. expand('<cword>'))<
 tnoremap <silent> <Leader><Esc> <C-\><C-n>:q!<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
+nnoremap <silent> <Leader><Esc> :call Forty_Two_pattern()<CR>
 
 tnoremap <silent> <Leader>qa :qa!<CR>
 nnoremap <silent> <Leader>qa :qa!<CR>
