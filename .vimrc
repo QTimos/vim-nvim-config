@@ -115,6 +115,7 @@ def g:Pattern_update()
 	var created_line = ""
 	var updated_line = ""
 	var updated_line_str = ""
+	var filename_line_str = ""
 	if empty(USER)
 		user_name = system("echo $USER")
 	else
@@ -130,7 +131,7 @@ def g:Pattern_update()
 		created_line = getline(8)
 		updated_line = getline(9)
 		updated_line_str = g:Get_updated_line(user_name, full_path)
-		var filename_line_str = g:Get_filename_line(file_name)
+		filename_line_str = g:Get_filename_line(file_name)
 		if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
 			return
 		else
@@ -181,9 +182,9 @@ def g:Forty_Two_pattern()
 
 
 	try
-		var mail_line = getline(5)
-		var created_line = getline(7)
-		var updated_line = getline(8)
+		var mail_line = getline(6)
+		var created_line = getline(8)
+		var updated_line = getline(9)
 		var updated_line_str = g:Get_updated_line(user_name, full_path)
 		if g:Str_in_str(mail_line, "By") && g:Str_in_str(created_line, "Created") && g:Str_in_str(updated_line, "Updated")
 			g:Pattern_update()
