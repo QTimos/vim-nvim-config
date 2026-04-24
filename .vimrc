@@ -418,9 +418,23 @@ def g:Open_file_under_cursor_in_vsplit()
 enddef
 
 def g:Copy_selected_text_to_clipboard()
+	var clipboard = ""
+	if !empty($WAYLAND_DISPLAY)
+		clipboard = "wl-copy"
+	elseif !empty($DISPLAY)
+		clipboard = "xclip -selection clipboard"
+	else
+		echoerr "Can't tell what clipboard your system is using"
+		return
+	endif
+	if executable(split(clipboard)[0]) == 0
+		echoerr "Missing tool: " .. clipboard
+		return
+	endif
+
 	execute "normal! gv\"vy"
 	var lines = getreg("v", 1, 1)
-	system("xclip -selection clipboard", lines)
+	system(clipboard, lines)
 enddef
 
 def g:Create_new_file()
