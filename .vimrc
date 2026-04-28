@@ -67,7 +67,7 @@ def g:MidnightNexus()
 	hi Title           guifg=#7AA2F7 gui=bold
 	hi LineNr          guifg=#3B4261 guibg=#0F111A
 	hi CursorLineNr    guifg=#7AA2F7 guibg=#0F111A gui=bold
-	hi CursorLine      guibg=#3B4261
+	hi CursorLine 	   guibg=#1a1b26
 	hi CursorColumn    guibg=#3B4261
 
 	hi ColorColumn     guibg=#3B4261
@@ -285,6 +285,7 @@ def g:Open_file_tree()
 		echo "You already have a Explorer instance opened!!!"
 		return
 	endif
+	g:netrw_banner = 0
 	execute ":25vsplit"
 	execute "Ex"
 enddef
@@ -503,6 +504,7 @@ def g:Create_new_file()
 enddef
 
 def g:NetrwMaps()
+	set colorcolumn=
 	silent! nunmap <buffer> <CR>
 	silent! nunmap <buffer> <Space>
 	silent! nunmap <buffer> <C-l>
@@ -524,6 +526,20 @@ augroup MyCustomMappings
 	autocmd!
 	autocmd FileType netrw g:NetrwMaps()
 augroup END
+def g:NetrwResize(timer: number)
+    if winnr('$') == 2
+        for i in range(1, winnr('$'))
+            if getwinvar(i, '&filetype') == 'netrw'
+                win_execute(win_getid(i), 'vertical resize 25')
+            endif
+        endfor
+    endif
+enddef
+augroup NetrwResize
+    autocmd!
+    autocmd WinClosed * timer_start(10, g:NetrwResize)
+augroup END
+
 
 set number
 set relativenumber
@@ -570,6 +586,7 @@ def g:CCtags()
 	system(['ctags', '-R', '--language-force=C', '--c-kinds=+p', '-a'] + include_dirs)
 	echo "Tags generated!"
 enddef
+command! Cctags call g:CCtags()
 
 g:c_c99 = 1
 g:c_c11 = 1
@@ -584,7 +601,7 @@ augroup CSyntax
 augroup END
 
 # Python syntax highlighting
-def g:PyCCtags()
+def g:PyCtags()
 	if executable('ctags') == 0
 		echo "Ctags doesn't exist on your machine!!!"
 		return
@@ -611,6 +628,8 @@ def g:PyCCtags()
 	system(['ctags', '-R', '--languages=Python', '--python-kinds=+cfmi', '-a'] + include_dirs)
 	echo "Tags generated!"
 enddef
+command! Pyctags call g:PyCtags()
+
 g:python_highlight_all = 1
 g:python_highlight_builtins = 1
 g:python_highlight_builtin_funcs = 1
@@ -626,6 +645,43 @@ augroup PySyntax
 	}
 augroup END
 
+set complete=.,b,u,t
+set completeopt=menuone,noinsert,noselect
+set pumheight=10
+
+
+augroup Pairs
+	autocmd!
+	autocmd FileType c,python,vim {
+		inoremap <buffer> ( ()<Left>
+		inoremap <buffer> [ []<Left>
+		inoremap <buffer> { {}<Left>
+		inoremap <buffer> " ""<Left>
+		inoremap <buffer> ' ''<Left>
+		inoremap <buffer> <expr> ) getline('.')[col('.') - 1] == ')' ? '<Right>' : ')'
+		inoremap <buffer> <expr> ] getline('.')[col('.') - 1] == ']' ? '<Right>' : ']'
+		inoremap <buffer> <expr> } getline('.')[col('.') - 1] == '}' ? '<Right>' : '}'
+		inoremap <buffer> <expr> <BS> getline('.')[col('.') - 2] .. getline('.')[col('.') - 1] =~ '()\|\[\]\|{}\|""\|''' ? '<BS><Del>' : '<BS>'
+	}
+augroup END
+
+# Folds
+set tabstop=4
+set shiftwidth=4
+set softtabstop=4
+set noexpandtab
+set foldmethod=syntax
+set foldlevelstart=99
+set foldcolumn=1
+set cursorline
+set colorcolumn=80
+set list
+set listchars=tab:»\ ,trail:·,extends:›,precedes:‹
+augroup IndentSettings
+	autocmd!
+	autocmd FileType python setlocal expandtab
+augroup END
+
 
 nnoremap <silent> <C-l> <C-w>l
 nnoremap <silent> <C-h> <C-w>h
@@ -634,7 +690,7 @@ nnoremap <silent> <C-j> <C-w>j
 
 nnoremap <silent> <Leader>n :next<CR>
 nnoremap <silent> <Leader>p :prev<CR>
-nnoremap <silent> <Leader>bf :Ex<CR>
+nnoremap <silent> <Leader>bf :let g:netrw_banner = 1 <CR>:Ex<CR>
 nnoremap <silent> <Leader>sc :source ~/.vimrc<CR>
 nnoremap <silent> <Leader>ft :call Open_file_tree()<CR>
 nnoremap <silent> <Leader>o :only<CR>
@@ -644,8 +700,7 @@ tnoremap <silent> <Leader><Esc> <C-\><C-n>:q!<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
 nnoremap <silent> <Leader><Esc> :call Forty_Two_pattern()<CR>
-nnoremap <silent> <Leader>ct :call CCtags()<CR>
-nnoremap <silent> <Leader>pt :call PyCCtags()<CR>
+nnoremap <silent> <CR> za
 
 tnoremap <silent> <Leader>qa :qa!<CR>
 nnoremap <silent> <Leader>qa :qa!<CR>
