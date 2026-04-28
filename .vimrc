@@ -1,29 +1,115 @@
 vim9script
 g:mapleader = ' '
 
+def g:MidnightNexus()
+	set background=dark
+	hi clear
+
+	# base
+	hi Normal 	   guifg=#C0CAF5 guibg=#0F111A
+	hi Comment         guifg=#3B4261 gui=italic
+
+	# constants
+	hi Constant        guifg=#7DCFFF
+	hi String          guifg=#9ECE6A
+	hi Character       guifg=#9ECE6A
+	hi Number          guifg=#E0AF68
+	hi Boolean         guifg=#E0AF68
+	hi Float           guifg=#E0AF68
+
+	# identifiers
+	hi Identifier      guifg=#7DCFFF
+	hi Function        guifg=#7AA2F7
+
+	# statements
+	hi Statement       guifg=#BB9AF7 gui=bold
+	hi Conditional     guifg=#BB9AF7 gui=bold
+	hi Repeat          guifg=#BB9AF7 gui=bold
+	hi Label           guifg=#BB9AF7
+	hi Operator        guifg=#BB9AF7
+	hi Keyword         guifg=#BB9AF7 gui=bold
+	hi Exception       guifg=#F7768E
+
+	# preprocessor
+	hi PreProc         guifg=#E0AF68
+	hi Include         guifg=#BB9AF7
+	hi Define          guifg=#BB9AF7
+	hi Macro           guifg=#E0AF68
+	hi PreCondit       guifg=#E0AF68
+
+	# types
+	hi Type            guifg=#7DCFFF gui=bold
+	hi StorageClass    guifg=#BB9AF7
+	hi Structure       guifg=#BB9AF7
+	hi Typedef         guifg=#BB9AF7
+
+	# special
+	hi Special         guifg=#7AA2F7
+	hi SpecialChar     guifg=#E0AF68
+	hi Tag             guifg=#7AA2F7
+	hi Delimiter       guifg=#C0CAF5
+	hi SpecialComment  guifg=#3B4261
+	hi Debug           guifg=#F7768E
+
+	# ui
+	hi Error           guifg=#F7768E guibg=#0F111A gui=bold
+	hi Todo            guifg=#E0AF68 guibg=#0F111A gui=bold
+	hi Underlined      guifg=#7AA2F7 gui=underline
+
+	hi StatusLine      guifg=#C0CAF5 guibg=#3B4261
+	hi StatusLineNC    guifg=#3B4261 guibg=#0F111A
+	hi VertSplit       guifg=#3B4261 guibg=#0F111A
+
+	hi TabLine         guifg=#C0CAF5 guibg=#3B4261
+	hi TabLineFill     guifg=#C0CAF5 guibg=#0F111A
+	hi TabLineSel      guifg=#0F111A guibg=#7AA2F7
+
+	hi Title           guifg=#7AA2F7 gui=bold
+	hi LineNr          guifg=#3B4261 guibg=#0F111A
+	hi CursorLineNr    guifg=#7AA2F7 guibg=#0F111A gui=bold
+	hi CursorLine      guibg=#3B4261
+	hi CursorColumn    guibg=#3B4261
+
+	hi ColorColumn     guibg=#3B4261
+	hi SignColumn      guifg=#3B4261 guibg=#0F111A
+
+	hi Folded          guifg=#3B4261 guibg=#0F111A
+	hi FoldColumn      guifg=#3B4261 guibg=#0F111A
+
+	hi Pmenu           guifg=#C0CAF5 guibg=#3B4261
+	hi PmenuSel        guifg=#0F111A guibg=#7AA2F7
+	hi PmenuSbar       guibg=#3B4261
+	hi PmenuThumb      guibg=#C0CAF5
+
+	hi Search          guifg=#0F111A guibg=#E0AF68
+	hi IncSearch       guifg=#0F111A guibg=#9ECE6A
+	hi Visual          guifg=#0F111A guibg=#7AA2F7
+	hi VisualNOS       guibg=#3B4261
+
+	hi MatchParen      guifg=#0F111A guibg=#7DCFFF gui=bold
+
+	hi NonText         guifg=#3B4261
+	hi SpecialKey      guifg=#3B4261
+	hi EndOfBuffer     guifg=#3B4261
+
+	hi Directory       guifg=#7AA2F7
+	hi ErrorMsg        guifg=#F7768E guibg=#0F111A gui=bold
+	hi WarningMsg      guifg=#E0AF68
+	hi MoreMsg         guifg=#9ECE6A
+	hi ModeMsg         guifg=#7AA2F7
+	hi Question        guifg=#7AA2F7
+
+	hi DiffAdd         guifg=#9ECE6A guibg=#0F111A
+	hi DiffChange      guifg=#E0AF68 guibg=#0F111A
+	hi DiffDelete      guifg=#F7768E guibg=#0F111A
+	hi DiffText        guifg=#7AA2F7 guibg=#0F111A
+enddef
+
+
 
 
 def g:Str_in_str(str: string, pattern: string): bool
-	var i = 0
-	var str_len = strlen(str)
-	var pattern_len = strlen(pattern)
-	while i < str_len
-		if str[i] == pattern[0]
-			var j = 0
-			while j < pattern_len
-				if str[i] != pattern[j]
-					break
-				endif
-				i += 1
-				j += 1
-			endwhile
-			if j == pattern_len
-				return true
-			endif
-		endif
-		i += 1
-	endwhile
-	return false
+	return stridx(str, pattern) != -1
 enddef
 
 
@@ -32,207 +118,161 @@ enddef
 
 var USER =  "hdyani"
 def g:Get_file_update_time_string(file: string): string
-	var last_update_time = ""
-	var date = substitute(substitute(system("stat --format=%y " .. file .. " \| awk '{ print $1 }'"), '-', '/', 'g'), '\n', '', '')
-	var time = system("stat --format=%y " .. file .. " \| cut -d. -f1 \| awk '{ print $2 }'")
-	last_update_time = join([date, time], ' ')
-	if empty(last_update_time)
-		return "" 
+	if !filereadable(file)
+		return ''
 	endif
-	var string = join(["Updated: ", substitute(last_update_time, "\n", "", ""), " by "], '')
-	return string
+	var raw = system('stat --format=%y ' .. shellescape(file))
+	if v:shell_error != 0 || empty(raw)
+		return ''
+	endif
+	var parts = split(raw)
+	if len(parts) < 2
+		return ''
+	endif
+	var date = substitute(parts[0], '-', '/', 'g')
+	var time = split(parts[1], '\.')[0]
+	return 'Updated: ' .. date .. ' ' .. time .. ' by '
 enddef
 def g:Get_file_creation_time_string(file: string): string
-	var creation_time = ""
-	var date = substitute(substitute(system("stat --format=%w " .. file .. " \| awk '{ print $1 }'"), '-', '/', 'g'), '\n', '', '')
-	var time = system("stat --format=%w " .. file .. " \| cut -d. -f1 \| awk '{ print $2 }'")
-	creation_time = join([date, time], ' ')
-	if empty(creation_time)
-		return "" 
+	if !filereadable(file)
+		return ''
 	endif
-	var string = join(["Created: ", substitute(creation_time, "\n", "", ""), " by "], '')
-	return string
+	var raw = system('stat --format=%w ' .. shellescape(file))
+	if v:shell_error != 0 || empty(raw) || raw =~ '^\-'
+		raw = system('stat --format=%z ' .. shellescape(file))
+		if v:shell_error != 0 || empty(raw)
+			return ''
+		endif
+	endif
+	var parts = split(raw)
+	if len(parts) < 2
+		return ''
+	endif
+	var date = substitute(parts[0], '-', '/', 'g')
+	var time = split(parts[1], '\.')[0]
+	return 'Created: ' .. date .. ' ' .. time .. ' by '
+enddef
+def g:Pad_username(user_name: string, base_spaces: number): list<any>
+	if strlen(user_name) > 9
+		return [user_name[: 8], repeat(' ', base_spaces)]
+	endif
+	return [user_name, repeat(' ', base_spaces + (9 - strlen(user_name)))]
 enddef
 def g:Get_filename_line(file_name: string): string
-	var filename_string = ""
-	var num_of_spaces_after_filename = 10
-	if strlen(file_name) > 41
-		filename_string = file_name[: 40]
-	else
-		filename_string = file_name
-		num_of_spaces_after_filename = 10 + (41 - strlen(file_name))
-	endif
-	var spaces_after_filename = repeat(" ", num_of_spaces_after_filename)
-	return join(["/*   ", substitute(filename_string, "\n", "", "g"), substitute(spaces_after_filename, "\n", "", "g"), ":+:      :+:    :+:   */"], "")
+	var name = strlen(file_name) > 41 ? file_name[: 40] : file_name
+	var spaces = repeat(' ', 10 + (41 - strlen(name)))
+	return '/*   ' .. name .. spaces .. ':+:      :+:    :+:   */'
 enddef
 def g:Get_mail_line(user_name: string): string
-	var username_string = ""
-	var num_of_spaces_after_mail = 19
-	if strlen(user_name) > 9
-		username_string = user_name[: 8]
-	else
-		username_string = user_name
-		num_of_spaces_after_mail = 19 + (9 - strlen(user_name))
-	endif
-	var spaces_after_mail = repeat(" ", num_of_spaces_after_mail)
-	return join(["/*   By: ", substitute(username_string, "\n", "", "g"), " <marvin@42.fr>", substitute(spaces_after_mail, "\n", "", "g"), "+#+  +:+       +#+        */"], "")
+	var [name, spaces] = g:Pad_username(user_name, 19)
+	return '/*   By: ' .. name .. ' <marvin@42.fr>' .. spaces .. '+#+  +:+       +#+        */'
 enddef
 def g:Get_created_line(user_name: string, full_path: string): string
-	var username_string = ""
-	var file_creation_time_string = g:Get_file_creation_time_string(full_path)
-	var num_of_spaces_after_name_in_file_info1 = 9
-	if strlen(user_name) > 9
-		username_string = user_name[: 8]
-	else
-		username_string = user_name
-		num_of_spaces_after_name_in_file_info1 = 9 + (9 - strlen(user_name))
+	var time_str = g:Get_file_creation_time_string(full_path)
+	if empty(time_str)
+		return ''
 	endif
-	var spaces_after_name_in_file_info1 = repeat(" ", num_of_spaces_after_name_in_file_info1)
-	return join(["/*   ", substitute(file_creation_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info1, "\n", "", "g"), "#+#    #+#             */"], "")
+	var [name, spaces] = g:Pad_username(user_name, 9)
+	return '/*   ' .. time_str .. name .. spaces .. '#+#    #+#             */'
 enddef
 def g:Get_updated_line(user_name: string, full_path: string): string
-	var username_string = ""
-	var num_of_spaces_after_name_in_file_info2 = 8
-	var file_update_time_string = g:Get_file_update_time_string(full_path)
-	if strlen(user_name) > 9
-		username_string = user_name[: 8]
-	else
-		username_string = user_name
-		num_of_spaces_after_name_in_file_info2 = 8 + (9 - strlen(user_name))
+	var time_str = g:Get_file_update_time_string(full_path)
+	if empty(time_str)
+		return ''
 	endif
-	var spaces_after_name_in_file_info2 = repeat(" ", num_of_spaces_after_name_in_file_info2)
-	return join(["/*   ", substitute(file_update_time_string, "\n", "", "g"), substitute(username_string, "\n", "", "g"), substitute(spaces_after_name_in_file_info2, "\n", "", "g"), "###   ########.fr       */"], "")
+	var [name, spaces] = g:Pad_username(user_name, 8)
+	return '/*   ' .. time_str .. name .. spaces .. '###   ########.fr       */'
 enddef
 def g:Pattern_update()
-	var user_name = ""
-	var file_name = ""
-	var file_directory = ""
-	var full_path = ""
-	var has_pattern = true
-	var lines = [] 
-	var filename_line = ""
-	var mail_line = ""
-	var created_line = ""
-	var updated_line = ""
-	var updated_line_str = ""
-	var filename_line_str = ""
-	if empty(USER)
-		user_name = system("echo $USER")
-	else
-		user_name = USER
-	endif
-	try
-		file_name = substitute(execute("echo @%"), '\n', '', '')
-		file_directory = substitute(execute("pwd"), '\n', '', '')
-		full_path = join([file_directory, file_name], '/')
-		has_pattern = false
-		filename_line = getline(4)
-		mail_line = getline(6)
-		created_line = getline(8)
-		updated_line = getline(9)
-		updated_line_str = g:Get_updated_line(user_name, full_path)
-		filename_line_str = g:Get_filename_line(file_name)
-		if !g:Str_in_str(mail_line, "By") || !g:Str_in_str(created_line, "Created") || !g:Str_in_str(updated_line, "Updated")
-			return
-		else
-			setline(4, filename_line_str)
-			setline(9, updated_line_str)
-		endif
-	catch
+	var user_name = empty(USER) ? systemlist('echo $USER')[0] : USER
+	var full_path = expand('%:p')
+	var file_name = expand('%:t')
+
+	if empty(file_name) || !filereadable(full_path)
 		return
-	endtry
+	endif
+
+	var mail_line    = getline(6)
+	var created_line = getline(8)
+	var updated_line = getline(9)
+
+	if !g:Str_in_str(mail_line, 'By')
+		|| !g:Str_in_str(created_line, 'Created')
+		|| !g:Str_in_str(updated_line, 'Updated')
+		return
+	endif
+
+	var updated_line_str  = g:Get_updated_line(user_name, full_path)
+	var filename_line_str = g:Get_filename_line(file_name)
+
+	if empty(updated_line_str) || empty(filename_line_str)
+		return
+	endif
+
+	setline(4, filename_line_str)
+	setline(9, updated_line_str)
 enddef
 def g:Forty_Two_pattern()
-	var user_name = ""
-	var file_name = ""
-	var file_directory = ""
-	var full_path = ""
-	var file_exists = ""
-	if empty(USER)
-		user_name = system("echo $USER")
-	else
-		user_name = USER
-	endif
+	var full_path = expand('%:p')
+	var file_name = expand('%:t')
+	var user_name = empty(USER) ? systemlist('echo $USER')[0] : USER
 
-
-	try
-		file_name = substitute(execute("echo @%"), '\n', '', '')
-		file_directory = substitute(execute("pwd"), '\n', '', '')
-		full_path = join([file_directory, file_name], '/')
-		file_exists = system("if \[ \-f \"" .. full_path .. "\" \]; then echo \"true\"; else echo \"false\"; fi")
-
-		if !file_exists
-			echo "File does not exist!!"
-			return
-		endif
-	catch
-		echo "File does not exist!!"
-		return
-	endtry
-
-
-
-	if empty(user_name)
+	if empty(file_name) || empty(user_name)
 		return
 	endif
-	var file_extention = file_name[-2 : -1]
-	if file_extention != ".c"
+	if !filereadable(full_path)
+		echo "File does not exist or is not readable!"
+		return
+	endif
+	if fnamemodify(file_name, ':e') != 'c' && fnamemodify(file_name, ':e') != 'h'
 		return
 	endif
 
+	var mail_line    = getline(6)
+	var created_line = getline(8)
+	var updated_line = getline(9)
 
-	try
-		var mail_line = getline(6)
-		var created_line = getline(8)
-		var updated_line = getline(9)
-		var updated_line_str = g:Get_updated_line(user_name, full_path)
-		if g:Str_in_str(mail_line, "By") && g:Str_in_str(created_line, "Created") && g:Str_in_str(updated_line, "Updated")
-			g:Pattern_update()
-			return
-		endif
-	catch
+	if g:Str_in_str(mail_line, 'By')
+		&& g:Str_in_str(created_line, 'Created')
+		&& g:Str_in_str(updated_line, 'Updated')
+		g:Pattern_update()
 		return
-	endtry
+	endif
 
+	var filename_line_str = g:Get_filename_line(file_name)
+	var mail_line_str     = g:Get_mail_line(user_name)
+	var created_line_str  = g:Get_created_line(user_name, full_path)
+	var updated_line_str  = g:Get_updated_line(user_name, full_path)
 
+	if empty(filename_line_str) || empty(mail_line_str)
+		|| empty(created_line_str) || empty(updated_line_str)
+		echo "Failed to generate header lines!"
+		return
+	endif
 
-	var filename_line = g:Get_filename_line(file_name)
-	var mail_line = g:Get_mail_line(user_name)
-	var created_line = g:Get_created_line(user_name, full_path)
-	var updated_line = g:Get_updated_line(user_name, full_path)
 	var lines = [
-		"/* ************************************************************************** */",
-		"/*                                                                            */",
-		"/*                                                        :::      ::::::::   */",
-		filename_line,
-		"/*                                                    +:+ +:+         +:+     */",
-		mail_line,
-		"/*                                                +#+#+#+#+#+   +#+           */",
-		created_line,
-		updated_line,
-		"/*                                                                            */",
-		"/* ************************************************************************** */",
-		""
-		]
-	var index = len(lines) - 1
-	while index >= 0
-		append(0, lines[index])
-		index = index - 1
-	endwhile
+		'/* ************************************************************************** */',
+		'/*                                                                            */',
+		'/*                                                        :::      ::::::::   */',
+		filename_line_str,
+		'/*                                                    +:+ +:+         +:+     */',
+		mail_line_str,
+		'/*                                                +#+#+#+#+#+   +#+           */',
+		created_line_str,
+		updated_line_str,
+		'/*                                                                            */',
+		'/* ************************************************************************** */',
+		''
+	]
+
+	for i in range(len(lines) - 1, 0, -1)
+		append(0, lines[i])
+	endfor
 enddef
 augroup FtPatterMappings
 	autocmd!
 	autocmd BufWritePre * g:Pattern_update()
 augroup END
-
-
-
-
-
-
-
-
-
 
 
 def g:Open_file_tree()
@@ -248,12 +288,6 @@ def g:Open_file_tree()
 	execute ":25vsplit"
 	execute "Ex"
 enddef
-
-
-
-
-
-
 
 var BUFFER_HANDLER = -1
 var WINID = -1
@@ -477,7 +511,6 @@ def g:NetrwMaps()
 	silent! nunmap <buffer> <C-j>
 	silent! nunmap <buffer> %
 	silent! nunmap <buffer> v
-	nnoremap <buffer> <silent> :normal v<CR>
 	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor()<CR>
 	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor_while_split()<CR>
 	nnoremap <silent> <Leader>s<CR> :call Open_file_under_cursor_in_vsplit()<CR>
@@ -498,14 +531,101 @@ set noswapfile
 set showcmd
 execute "set mouse=a"
 
-colorscheme desert
 syntax on
 filetype on
 filetype plugin indent on
 set termguicolors
-highlight Normal guibg=NONE ctermbg=NONE
-highlight NonText guibg=NONE ctermbg=NONE
-highlight EndOfBuffer guibg=NONE ctermbg=NONE
+
+# C syntax highlighting
+def g:CCtags()
+	if executable('ctags') == 0
+		echo "Ctags doesn't exist on your machine!!!"
+		return
+	endif
+	var compiler = executable('gcc') ? 'gcc' : executable('clang') ? 'clang' : ''
+	if empty(compiler)
+		echo "No C compiler found to detect include paths!"
+		return
+	endif
+	var file_path = expand('%:p:h')
+	var raw = system('echo | ' .. compiler .. ' -v -x c - 2>&1')
+	var include_dirs = []
+	var in_includes = false
+	for line in split(raw, '\n')
+		if line =~ '#include <\.\.\.>'
+			in_includes = true
+			continue
+		endif
+		if in_includes
+			if line =~ 'End of search list'
+				break
+			endif
+			var dir = trim(line)
+			if isdirectory(dir)
+				add(include_dirs, dir)
+			endif
+		endif
+	endfor
+	system(['ctags', '-R', '--languages=C', '--c-kinds=+p', file_path])
+	system(['ctags', '-R', '--language-force=C', '--c-kinds=+p', '-a'] + include_dirs)
+	echo "Tags generated!"
+enddef
+
+g:c_c99 = 1
+g:c_c11 = 1
+g:c_posix = 1
+g:c_space_errors = 1
+augroup CSyntax
+	autocmd!
+	autocmd FileType c {
+	syntax match cFunctionCall /\(\bif\|\bwhile\|\bfor\|\bswitch\|\breturn\)\@!\w\+\s*(/me=e-1
+		highlight cFunctionCall guifg=#9ECE6A
+		}
+augroup END
+
+# Python syntax highlighting
+def g:PyCCtags()
+	if executable('ctags') == 0
+		echo "Ctags doesn't exist on your machine!!!"
+		return
+	endif
+	if executable('python3') == 0
+		echo "Python3 not found!"
+		return
+	endif
+	var file_path = expand('%:p:h')
+	var raw = system('python3 -c "import sys; print(\"\n\".join(sys.path))"')
+	var include_dirs = []
+	for line in split(raw, '\n')
+	var dir = trim(line)
+		if !empty(dir) && isdirectory(dir)
+			add(include_dirs, dir)
+		endif
+	endfor
+	if empty(include_dirs)
+		echo "No Python include paths found!"
+		return
+	endif
+	echo "Generating tags..."
+	system(['ctags', '-R', '--languages=Python', '--python-kinds=+cfmi', file_path])
+	system(['ctags', '-R', '--languages=Python', '--python-kinds=+cfmi', '-a'] + include_dirs)
+	echo "Tags generated!"
+enddef
+g:python_highlight_all = 1
+g:python_highlight_builtins = 1
+g:python_highlight_builtin_funcs = 1
+g:python_highlight_builtin_objs = 1
+g:python_highlight_exceptions = 1
+g:python_highlight_string_formatting = 1
+g:python_highlight_indent_errors = 1
+augroup PySyntax
+	autocmd!
+	autocmd FileType python {
+		syntax match pyFunctionCall /\(\bif\|\bwhile\|\bfor\|\bwith\|\bexcept\|\bassert\|\bprint\|\breturn\)\@!\w\+\s*(/me=e-1
+		hi pyFunctionCall guifg=#7DCFFF
+	}
+augroup END
+
 
 nnoremap <silent> <C-l> <C-w>l
 nnoremap <silent> <C-h> <C-w>h
@@ -524,7 +644,12 @@ tnoremap <silent> <Leader><Esc> <C-\><C-n>:q!<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
 nnoremap <silent> <Leader><Esc> :call Forty_Two_pattern()<CR>
+nnoremap <silent> <Leader>ct :call CCtags()<CR>
+nnoremap <silent> <Leader>pt :call PyCCtags()<CR>
 
 tnoremap <silent> <Leader>qa :qa!<CR>
 nnoremap <silent> <Leader>qa :qa!<CR>
 vnoremap <silent> <Leader>qa :qa!<CR>
+
+# Always keep at the bottom
+g:MidnightNexus()
