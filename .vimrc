@@ -1,5 +1,7 @@
 vim9script
 g:mapleader = ' '
+set nomodeline
+set modelines=0
 
 def g:MidnightNexus()
 	set background=dark
@@ -105,11 +107,195 @@ def g:MidnightNexus()
 	hi DiffText        guifg=#7AA2F7 guibg=#0F111A
 enddef
 
-
-
-
 def g:Str_in_str(str: string, pattern: string): bool
 	return stridx(str, pattern) != -1
+enddef
+
+
+
+def g:CSS_skeleton()
+	if &filetype != 'css'
+		echo "You are not in an css file!!"
+		return
+	endif
+	var lines = [
+			":root {",
+		"	--primary: ;",
+		"	--secondary: ;",
+		"	--bg-body: ;",
+		"	--text-main: ;",
+		"	--font-body: ;",
+		"	--font-heading: ;",
+		"	--radius: ;",
+		"	--container-width: ;",
+		"}",
+		"",
+		"*, *::before, *::after {",
+		"	box-sizing: border-box;",
+		"}",
+		"",
+		"* {",
+		"	margin: 0;",
+		"	padding: 0;",
+		"}",
+		"",
+		"html {",
+		"	-webkit-text-size-adjust: none;",
+		"	text-size-adjust: none;",
+		"	scroll-behavior: smooth;",
+		"	height: 100%;",
+		"}",
+		"",
+		"body {",
+		"	min-height: 100vh;",
+		"	line-height: 1.5;",
+		"	-webkit-font-smoothing: antialiased;",
+		"	-moz-osx-font-smoothing: grayscale;",
+		"	text-rendering: optimizeSpeed;",
+		"}",
+		"",
+		"img, picture, video, canvas, svg {",
+		"	display: block;",
+		"	max-width: 100%;",
+		"	height: auto;",
+		"}",
+		"",
+		"input, button, textarea, select {",
+		"	font: inherit;",
+		"}",
+		"",
+		"ul, ol {",
+		"	list-style: none;",
+		"}",
+		"",
+		"button, [type=\"button\"], [type=\"submit\"] {",
+		"	cursor: pointer;",
+		"}",
+		"",
+		"@media (prefers-reduced-motion: reduce) {",
+		"	*, *::before, *::after {",
+		"		animation-duration: 0.01ms !important;",
+		"		animation-iteration-count: 1 !important;",
+		"		transition-duration: 0.01ms !important;",
+		"		scroll-behavior: auto !important;",
+		"	}",
+		"}"
+	]
+	for ln in range(1, len(lines))
+		setline(ln, lines[ln - 1])
+	endfor
+enddef
+command! CSSSkell call g:CSS_skeleton()
+
+def g:HTML_skeleton()
+	if &filetype != 'html'
+		echo "You are not in an html file!!"
+		return
+	endif
+	var lines = [
+		"<!DOCTYPE html>",
+		"<html lang=\"en\">",
+		"<head>",
+		"	<meta charset=\"UTF-8\">",
+		"	<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+		"	<title>Page Title</title>",
+		"</head>",
+		"<body>",
+		"	",
+		"</body>",
+		"</html>"
+	]
+	for ln in range(1, len(lines))
+		setline(ln, lines[ln - 1])
+	endfor
+enddef
+command! HTMLSkell call g:HTML_skeleton()
+
+
+
+def g:ToggleCommentBlock(open_tag: string, close_tag: string, firstline: number, lastline: number)
+	if firstline == lastline
+		var l = getline(firstline)
+		if l =~ escape(open_tag, '!/.*') && l =~ escape(close_tag, '!/.*')
+			l = substitute(l, escape(open_tag, '!/.*') .. ' \?', '', '')
+			l = substitute(l, ' \?' .. escape(close_tag, '!/.*'), '', '')
+			setline(firstline, l)
+		else
+			setline(firstline, open_tag .. ' ' .. l .. ' ' .. close_tag)
+		endif
+	else
+		if getline(firstline) =~ '^\s*' .. escape(open_tag, '!/') && getline(lastline) =~ escape(close_tag, '!/') .. '\s*$'
+			deletebufline('%', lastline)
+			deletebufline('%', firstline)
+		else
+			append(lastline, close_tag)
+			append(firstline - 1, open_tag)
+		endif
+	endif
+enddef
+def g:ToggleCommentRange()
+	var ft = &filetype
+	var comment_str = ''
+	if ft == 'c' || ft == 'cpp' || ft == 'rust' || ft == 'go' || ft == 'javascript' || ft == 'typescript'
+		comment_str = '//'
+	elseif ft == 'python' || ft == 'sh' || ft == 'bash' || ft == 'vim' || ft == 'ruby' || ft == 'perl'
+		comment_str = '#'
+	elseif ft == 'lua'
+		comment_str = '--'
+	elseif ft == 'html'
+		g:ToggleCommentBlock('<!--', '-->', line("'<"), line("'>"))
+		return
+	elseif ft == 'css'
+		g:ToggleCommentBlock('/*', '*/', line("'<"), line("'>"))
+		return
+	else
+		echo "No comment string defined for filetype: " .. ft
+		return
+	endif
+	var firstline = line("'<")
+	var lastline  = line("'>")
+	var clen = strlen(comment_str)
+	var lc = 0
+	for lnum in range(firstline, lastline)
+		if matchstr(getline(lnum), '^\s*\zs.\{' .. clen .. '\}') == comment_str
+			lc += 1
+		endif
+	endfor
+	if lc < lastline - firstline + 1
+		for lnum in range(firstline, lastline)
+			setline(lnum, comment_str .. getline(lnum))
+		endfor
+	else
+		for lnum in range(firstline, lastline)
+			setline(lnum, substitute(getline(lnum), escape(comment_str, '/'), '', ''))
+		endfor
+	endif
+enddef
+def g:ToggleComment()
+	var ft = &filetype
+	var comment_str = ''
+	if ft == 'c' || ft == 'cpp' || ft == 'rust' || ft == 'go' || ft == 'javascript' || ft == 'typescript'
+		comment_str = '//'
+	elseif ft == 'python' || ft == 'sh' || ft == 'bash' || ft == 'vim' || ft == 'ruby' || ft == 'perl'
+		comment_str = '#'
+	elseif ft == 'lua'
+		comment_str = '--'
+	elseif ft == 'html'
+		g:ToggleCommentBlock('<!--', '-->', line('.'), line('.'))
+		return
+	elseif ft == 'css'
+		g:ToggleCommentBlock('/*', '*/', line('.'), line('.'))
+		return
+	else
+		echo "No comment string defined for filetype: " .. ft
+		return
+	endif
+	var l = getline('.')
+	if l =~ '^\s*' .. escape(comment_str, '/') .. '\s'
+		setline('.', substitute(l, escape(comment_str, '/'), '', ''))
+	else
+		setline('.', comment_str .. l)
+	endif
 enddef
 
 
@@ -322,8 +508,7 @@ def g:Popup_terminal(command = "NONE")
 	var termheight = float2nr(winheight * 0.8)
 	var buftype = &buftype
 	if command == "NONE"
-		var shell_env_var = split(execute("echo $SHELL"), "/")
-		var shell = shell_env_var[-1]
+		var shell = fnamemodify(&shell, ':t')
 		var buff_was_open = 0
 		ccc = shell
 		if BUFFER_HANDLER == -1
@@ -480,22 +665,21 @@ def g:Create_new_file()
 	endif
 	var directory = b:netrw_curdir
 	var full_path = directory .. "/" .. f_name
-	var file_exists = system("if \[ \-f \"" .. full_path .. "\" \]; then echo \"true\"; else echo \"false\"; fi")
 
-	if file_exists == "true\n" || isdirectory(full_path)
+	if filereadable(full_path) || isdirectory(full_path)
 		 echo "\nFile or Directory already exists!!!"
 		return
 	endif
 	if f_name[-1] == "/"
-		var ret_str = system("mkdir " .. full_path)
-		if !empty(ret_str)
-			echo "\nYou don't have the required premissions to create this directory!!"
+		var ret_str = system(['mkdir', '-p', full_path])
+		if v:shell_error != 0
+			echo "\nYou don't have the required permissions to create this directory!!"
 			return
 		endif
 	else
-		var ret_str = system("touch " .. full_path)
-		if !empty(ret_str)
-			echo "\nYou don't have the required premissions to create this file!!"
+		var ret_str = system(['touch', full_path])
+		if v:shell_error != 0
+			echo "\nYou don't have the required permissions to create this file!!"
 			return
 		endif
 	endif
@@ -614,7 +798,7 @@ def g:PyCtags()
 	var raw = system('python3 -c "import sys; print(\"\n\".join(sys.path))"')
 	var include_dirs = []
 	for line in split(raw, '\n')
-	var dir = trim(line)
+		var dir = trim(line)
 		if !empty(dir) && isdirectory(dir)
 			add(include_dirs, dir)
 		endif
@@ -701,6 +885,9 @@ tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
 nnoremap <silent> <Leader><Esc> :call Forty_Two_pattern()<CR>
 nnoremap <silent> <CR> za
+
+nnoremap <silent> gcc :call g:ToggleComment()<CR>
+vnoremap <silent> gcc :<C-u>call g:ToggleCommentRange()<CR>
 
 tnoremap <silent> <Leader>qa :qa!<CR>
 nnoremap <silent> <Leader>qa :qa!<CR>
