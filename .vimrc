@@ -766,8 +766,8 @@ def g:CCtags()
 			endif
 		endif
 	endfor
-	system(['ctags', '-R', '--languages=C', '--c-kinds=+p', file_path])
-	system(['ctags', '-R', '--language-force=C', '--c-kinds=+p', '-a'] + include_dirs)
+	system('ctags -R --languages=C --c-kinds=+p ' .. shellescape(file_path))
+	system('ctags -R --language-force=C --c-kinds=+p -a ' .. join(include_dirs, ' '))
 	echo "Tags generated!"
 enddef
 command! Cctags call g:CCtags()
@@ -808,8 +808,16 @@ def g:PyCtags()
 		return
 	endif
 	echo "Generating tags..."
-	system(['ctags', '-R', '--languages=Python', '--python-kinds=+cfmi', file_path])
-	system(['ctags', '-R', '--languages=Python', '--python-kinds=+cfmi', '-a'] + include_dirs)
+	system("ctags -R --languages=Python --python-kinds=+cfmi " .. shellescape(file_path))
+	if v:shell_error != 0
+		echo "failed to generate Tags!!!"
+		return 
+	endif
+	system("ctags -R --languages=Python --python-kinds=+cfmi -a " .. join(include_dirs, ' '))
+	if v:shell_error != 0
+		echo "failed to generate Tags!!!"
+		return 
+	endif
 	echo "Tags generated!"
 enddef
 command! Pyctags call g:PyCtags()
