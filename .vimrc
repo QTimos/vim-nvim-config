@@ -671,13 +671,13 @@ def g:Create_new_file()
 		return
 	endif
 	if f_name[-1] == "/"
-		var ret_str = system(['mkdir', '-p', full_path])
+		var ret_str = system('mkdir -p' .. full_path)
 		if v:shell_error != 0
 			echo "\nYou don't have the required permissions to create this directory!!"
 			return
 		endif
 	else
-		var ret_str = system(['touch', full_path])
+		var ret_str = system('touch ' .. full_path)
 		if v:shell_error != 0
 			echo "\nYou don't have the required permissions to create this file!!"
 			return
