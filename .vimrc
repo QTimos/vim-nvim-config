@@ -776,12 +776,13 @@ g:c_c99 = 1
 g:c_c11 = 1
 g:c_posix = 1
 g:c_space_errors = 1
+def CSetup()
+	syntax match cFunctionCall /\(\bif\|\bwhile\|\bfor\|\bswitch\|\breturn\)\@!\w\+\s*(/me=e-1
+	highlight cFunctionCall guifg=#9ECE6A
+enddef
 augroup CSyntax
 	autocmd!
-	autocmd FileType c {
-	syntax match cFunctionCall /\(\bif\|\bwhile\|\bfor\|\bswitch\|\breturn\)\@!\w\+\s*(/me=e-1
-		highlight cFunctionCall guifg=#9ECE6A
-		}
+	autocmd FileType c CSetup()
 augroup END
 
 # Python syntax highlighting
@@ -829,32 +830,41 @@ g:python_highlight_builtin_objs = 1
 g:python_highlight_exceptions = 1
 g:python_highlight_string_formatting = 1
 g:python_highlight_indent_errors = 1
+def PySetup()
+	syntax match pyFunctionCall /\(\bif\|\bwhile\|\bfor\|\bwith\|\bexcept\|\bassert\|\bprint\|\breturn\)\@!\w\+\s*(/me=e-1
+	highlight pyFunctionCall guifg=#7DCFFF
+enddef
 augroup PySyntax
 	autocmd!
-	autocmd FileType python {
-		syntax match pyFunctionCall /\(\bif\|\bwhile\|\bfor\|\bwith\|\bexcept\|\bassert\|\bprint\|\breturn\)\@!\w\+\s*(/me=e-1
-		hi pyFunctionCall guifg=#7DCFFF
-	}
+	autocmd FileType python PySetup()
 augroup END
 
 set complete=.,b,u,t
 set completeopt=menuone,noinsert,noselect
 set pumheight=10
 
+def PairsSetup()
+	inoremap <buffer> ( ()<Left>
+	inoremap <buffer> [ []<Left>
+	inoremap <buffer> { {}<Left>
+	inoremap <buffer> " ""<Left>
+	inoremap <buffer> ' ''<Left>
+	inoremap <buffer> <expr> ) getline('.')[col('.') - 1] == ')' ? '<Right>' : ')'
+	inoremap <buffer> <expr> ] getline('.')[col('.') - 1] == ']' ? '<Right>' : ']'
+	inoremap <buffer> <expr> } getline('.')[col('.') - 1] == '}' ? '<Right>' : '}'
 
+	var line = getline('.')
+    var col = col('.')
+    var pair = line[col - 2 : col - 1]
+    if pair =~ '()\|\[\]\|{}\|""\|'''''''
+        inoremap <buffer> <expr> <BS> "\<BS>\<Del>"
+    else
+        inoremap <buffer> <expr> <BS> "\<BS>"
+    endif
+enddef
 augroup Pairs
 	autocmd!
-	autocmd FileType c,python,vim {
-		inoremap <buffer> ( ()<Left>
-		inoremap <buffer> [ []<Left>
-		inoremap <buffer> { {}<Left>
-		inoremap <buffer> " ""<Left>
-		inoremap <buffer> ' ''<Left>
-		inoremap <buffer> <expr> ) getline('.')[col('.') - 1] == ')' ? '<Right>' : ')'
-		inoremap <buffer> <expr> ] getline('.')[col('.') - 1] == ']' ? '<Right>' : ']'
-		inoremap <buffer> <expr> } getline('.')[col('.') - 1] == '}' ? '<Right>' : '}'
-		inoremap <buffer> <expr> <BS> getline('.')[col('.') - 2] .. getline('.')[col('.') - 1] =~ '()\|\[\]\|{}\|""\|''' ? '<BS><Del>' : '<BS>'
-	}
+	autocmd FileType c,python,vim PairsSetup()
 augroup END
 
 # Folds
