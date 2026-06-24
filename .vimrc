@@ -113,6 +113,28 @@ enddef
 
 
 
+def g:PY_skeleton()
+	if &filetype != 'python'
+		echo "You are not in an python file!!"
+		return
+	endif
+	var lines = [
+		"",
+		"",
+		"def main() -> None:",
+		"    raise NotImplentedError()",
+		"",
+		"",
+		"if __name__ == \"__main__\":",
+		"    main()"
+	]
+	for ln in range(1, len(lines))
+		setline(ln, lines[ln - 1])
+	endfor
+enddef
+command! PYSkell call g:PY_skeleton()
+
+
 def g:CSS_skeleton()
 	if &filetype != 'css'
 		echo "You are not in an css file!!"
@@ -476,20 +498,30 @@ def g:Open_file_tree()
 	execute "Ex"
 enddef
 
-var BUFFER_HANDLER = -1
-var WINID = -1
 
-var BUFFER_HANDLER_NO_PAR = -1
+var term_registry: dict<dict<number>> = {}
 var WINID_NO_PAR = -1
+var BUFFER_HANDLER_NO_PAR = -1
 def g:Close_terminal(flag: number = 0)
 	if flag == 1
-		if WINID != -1
-			popup_close(WINID)
-			WINID = -1
+		var current_src_buf = ""
+		if &buftype == 'terminal' && exists('b:source_buf')
+			current_src_buf = string(b:source_buf)
+		else
+			current_src_buf = string(bufnr())
 		endif
-		if BUFFER_HANDLER != -1
-			term_setkill(BUFFER_HANDLER, "kill")
-			BUFFER_HANDLER = -1
+
+		if has_key(term_registry, current_src_buf)
+			var term_data = term_registry[current_src_buf]
+			if term_data.win_id != -1
+				popup_close(term_data.win_id)
+				term_registry[current_src_buf].win_id = -1
+			endif
+			if term_data.term_buf != -1
+				term_setkill(term_data.term_buf, "kill")
+				term_registry[current_src_buf].term_buf = -1
+			endif
+			remove(term_registry, current_src_buf)
 		endif
 	elseif flag == 2
 		popup_close(WINID_NO_PAR)
@@ -500,6 +532,7 @@ def g:Close_terminal(flag: number = 0)
 		return
 	endif
 enddef
+
 def g:Popup_terminal(command = "NONE")
 	var ccc = ""
 	var winwidth = &columns
@@ -507,22 +540,45 @@ def g:Popup_terminal(command = "NONE")
 	var termwidth = float2nr(winwidth * 0.8)
 	var termheight = float2nr(winheight * 0.8)
 	var buftype = &buftype
+
 	if command == "NONE"
 		var shell = fnamemodify(&shell, ':t')
 		var buff_was_open = 0
 		ccc = shell
-		if BUFFER_HANDLER == -1
-			BUFFER_HANDLER = term_start(ccc, {
+		var current_src_buf = ""
+		if &buftype == 'terminal' && exists('b:source_buf')
+			current_src_buf = string(b:source_buf)
+		else
+			current_src_buf = string(bufnr())
+		endif
+		if !has_key(term_registry, current_src_buf)
+			term_registry[current_src_buf] = { term_buf: -1, win_id: -1 }
+		endif
+		var term_data = term_registry[current_src_buf]
+		if term_data.term_buf == -1 || bufexists(term_data.term_buf) == 0
+			var file_dir = expand('%:p:h')
+			var parent_buf = bufnr()
+			term_data.term_buf = term_start(ccc, {
 				hidden: 1,
 				term_rows: termheight,
 				term_cols: termwidth,
-				term_finish: "close"
+				term_finish: "close",
+				cwd: file_dir
 			})
+			term_registry[current_src_buf].term_buf = term_data.term_buf
+			setbufvar(term_data.term_buf, 'source_buf', parent_buf)
 		else
 			buff_was_open = 1
 		endif
-		if WINID == -1
-			WINID = popup_create(BUFFER_HANDLER, {
+		if term_data.win_id == -1
+			for key in keys(term_registry)
+				if term_registry[key].win_id != -1
+					popup_close(term_registry[key].win_id)
+					term_registry[key].win_id = -1
+				endif
+			endfor
+
+			term_data.win_id = popup_create(term_data.term_buf, {
 				minwidth: termwidth,
 				minheight: termheight,
 				maxwidth: termwidth,
@@ -533,6 +589,7 @@ def g:Popup_terminal(command = "NONE")
 				pos: "center",
 				mapping: 1
 			})
+			term_registry[current_src_buf].win_id = term_data.win_id
 
 			execute "silent! tunmap <buffer> <C-k>"
 			execute "silent! tunmap <buffer> <C-j>"
@@ -544,15 +601,16 @@ def g:Popup_terminal(command = "NONE")
 			execute "tnoremap <buffer> <C-h> \<Esc>OD"
 			execute "tnoremap <buffer> <C-l> \<Esc>OC"
 
-
 			execute "tnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
 			execute "nnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
 			execute "tnoremap <silent> <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
 		elseif buftype == "terminal"
-			popup_close(WINID)
-			WINID = -1
+			popup_close(term_data.win_id)
+			term_data.win_id = -1
+			term_registry[current_src_buf].win_id = -1
 			return
 		endif
+
 		if buff_was_open == 1
 			call feedkeys("i", 'n')
 		endif
@@ -686,6 +744,14 @@ def g:Create_new_file()
 	call feedkeys("<CR>", 'n')
 	execute "Ex"
 enddef
+
+def g:CdToCurrentFile()
+	execute "cd %:p:h"
+enddef
+augroup CdToFile
+	autocmd!
+	autocmd BufEnter * g:CdToCurrentFile()
+augroup END
 
 def g:NetrwMaps()
 	set colorcolumn=
@@ -854,13 +920,13 @@ def PairsSetup()
 	inoremap <buffer> <expr> } getline('.')[col('.') - 1] == '}' ? '<Right>' : '}'
 
 	var line = getline('.')
-    var col = col('.')
-    var pair = line[col - 2 : col - 1]
-    if pair =~ '()\|\[\]\|{}\|""\|'''''''
-        inoremap <buffer> <expr> <BS> "\<BS>\<Del>"
-    else
-        inoremap <buffer> <expr> <BS> "\<BS>"
-    endif
+	var col = col('.')
+	var pair = line[col - 2 : col - 1]
+	if pair =~ '()\|\[\]\|{}\|""\|'''''''
+		inoremap <buffer> <expr> <BS> "\<BS>\<Del>"
+	else
+		inoremap <buffer> <expr> <BS> "\<BS>"
+	endif
 enddef
 augroup Pairs
 	autocmd!
@@ -883,7 +949,6 @@ augroup IndentSettings
 	autocmd!
 	autocmd FileType python setlocal expandtab
 augroup END
-
 
 nnoremap <silent> <C-l> <C-w>l
 nnoremap <silent> <C-h> <C-w>h
