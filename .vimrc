@@ -933,6 +933,7 @@ augroup Pairs
 	autocmd FileType c,python,vim PairsSetup()
 augroup END
 
+
 # Folds
 set tabstop=4
 set shiftwidth=4
@@ -963,6 +964,7 @@ nnoremap <silent> <Leader>ft :call Open_file_tree()<CR>
 nnoremap <silent> <Leader>o :only<CR>
 nnoremap <silent> <Leader>ter :call Popup_terminal()<CR>
 nnoremap <silent> <Leader>man :call Popup_terminal("man " .. expand('<cword>'))<CR>
+nnoremap <silent> <Leader>help :call Popup_terminal("python3 -c help(" .. expand('<cword>') .. ")")<CR>
 tnoremap <silent> <Leader><Esc> <C-\><C-n>:q!<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
