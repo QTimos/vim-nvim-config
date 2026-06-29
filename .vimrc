@@ -745,6 +745,8 @@ def g:Create_new_file()
 	execute "Ex"
 enddef
 
+# Auto changing directory to the directory the file in the current buffer is
+# in
 def g:CdToCurrentFile()
 	execute "cd %:p:h"
 enddef
