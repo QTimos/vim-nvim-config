@@ -29,20 +29,20 @@ vim.opt.timeoutlen = 300
 function MidnightNexus()
 	local highlight = vim.api.nvim_set_hl
 	local colors = {
-		bg       = "#0F111A",
-		bg_alt   = "#171B26",
-		bg_dark  = "#0A0C14",
-		fg       = "#C0CAF5",
-		fg_dark  = "#A9B1D6",
-		grey     = "#3B4261",
-		red      = "#F7768E",
-		green    = "#9ECE6A",
-		yellow   = "#E0AF68",
-		blue     = "#7AA2F7",
-		magenta  = "#BB9AF7",
-		cyan     = "#7DCFFF",
-		orange   = "#FFB86C",
-		pink     = "#F5C2E7",
+		bg = "#0F111A",
+		bg_alt = "#171B26",
+		bg_dark = "#0A0C14",
+		fg = "#C0CAF5",
+		fg_dark = "#A9B1D6",
+		grey = "#3B4261",
+		red = "#F7768E",
+		green = "#9ECE6A",
+		yellow = "#E0AF68",
+		blue = "#7AA2F7",
+		magenta = "#BB9AF7",
+		cyan = "#7DCFFF",
+		orange = "#FFB86C",
+		pink = "#F5C2E7",
 		selection = "#2A3A5A",
 	}
 	vim.cmd("highlight clear")
@@ -261,6 +261,38 @@ function MidnightNexus()
 	highlight(0, "markdownCode", { fg = colors.green })
 	highlight(0, "markdownCodeBlock", { fg = colors.green })
 	highlight(0, "markdownUrl", { fg = colors.blue, underline = true })
+
+	-- Vim
+	highlight(0, "vimCommand", { fg = "#BB9AF7", bold = true })
+	highlight(0, "vimVar", { fg = "#7DCFFF" })
+	highlight(0, "vimFunctionScope", { fg = "#7DCFFF", bold = true })
+	highlight(0, "vimVarScope", { fg = "#7DCFFF", bold = true })
+	highlight(0, "vimDefName", { fg = "#7AA2F7" })
+	highlight(0, "vim9UserFunc", { fg = "#7AA2F7" })
+	highlight(0, "vimFuncName", { fg = "#F5C2E7" })
+	highlight(0, "vimFunction", { fg = "#F5C2E7" })
+	highlight(0, "vimFuncParam", { fg = "#F5C2E7" })
+	highlight(0, "vimComment", { fg = "#3B4261", italic = true })
+	highlight(0, "vimLet", { fg = "#E0AF68" })
+	highlight(0, "vimFBVar", { fg = "#E0AF68" })
+	highlight(0, "vimHiGroup", { fg = "#E0AF68" })
+	highlight(0, "vimHiGuiFgBg", { fg = "#7AA2F7" })
+	highlight(0, "vimHiGui", { fg = "#7AA2F7" })
+	highlight(0, "vimHiKeyList", { fg = "#BB9AF7" })
+	highlight(0, "vimHiGuiRgb", { fg = "#9ECE6A" })
+	highlight(0, "vimHiAttrib", { fg = "#9ECE6A" })
+	highlight(0, "vimOptionVarName", { fg = "#9ECE6A" })
+	highlight(0, "vimOptionVar", { fg = "#9ECE6A", bold = true })
+	highlight(0, "vimHiCTerm", { fg = "#7AA2F7" })
+	highlight(0, "CursorIM", { fg = "#0F111A", bg = "#F5C2E7" })
+	highlight(0, "ToolbarLine", { bg = "#171B26" })
+	highlight(0, "ToolbarButton", { fg = "#C0CAF5", bg = "#3B4261", bold = true })
+	highlight(0, "StatusLineTerm", { fg = "#C0CAF5", bg = "#171B26" })
+	highlight(0, "StatusLineTermNC", { fg = "#3B4261", bg = "#0F111A" })
+	highlight(0, "SpellBad", { undercurl = true, sp = "#F7768E" })
+	highlight(0, "SpellCap", { undercurl = true, sp = "#E0AF68" })
+	highlight(0, "SpellRare", { undercurl = true, sp = "#7DCFFF" })
+	highlight(0, "SpellLocal", { undercurl = true, sp = "#9ECE6A" })
 
 	-- Misc
 	highlight(0, "WinBar", { fg = colors.fg, bg = colors.bg })
@@ -777,6 +809,49 @@ vim.api.nvim_create_autocmd({"BufEnter"}, {
 })
 
 
+Config = {
+	width = 0.8,
+	height = 0.8,
+	border = "rounded",
+	winblend = 0,
+	shell = nil,
+	toggle_keymap = "<Leader>ter",
+	kill_keymap = "<Leader>q",
+	terminal_mappings = true,
+	padding = {
+		top = 1,
+		right = 6,
+		bottom = 1,
+		left = 6
+	},
+	title = "Floating Terminal",
+	title_pos = "center"
+}
+TermRegistry = {}
+function GetKey()
+	if vim.bo.buftype == "terminal" and vim.b.source_buf then
+		return vim.b.source_buf
+	end
+	return vim.api.nvim_get_current_buf()
+end
+function CreateFloatingWindow()
+	local width = math.floor(vim.o.columns * config.width)
+	local height = math.floor(vim.o.lines * config.height)
+	local opts = {
+		relative = "editor",
+		row = math.floor((vim.o.lines - config.height)/2),
+		col = math.floor((vim.o.columns - config.width)/2),
+		width = config.width-12,
+		height = config.height-2,
+		style = "minimal",
+		border = config.border,
+		title = config.title,
+		title_pos = config.title_pos
+	}
+end
+
+
+
 CSyntaxV = vim.api.nvim_create_augroup("CSyntax", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
 	group = CSyntaxV,
@@ -849,6 +924,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 	group = PYSyntaxV,
 	pattern = "python",
 	callback = function(args)
+		vim.opt_local.expandtab = true
 		local dir = vim.fn.stdpath("config")
 		local parser = dir .. "/python.so"
 		pcall(vim.treesitter.language.add, "python", { path = parser })
@@ -963,91 +1039,56 @@ vim.api.nvim_create_user_command("Pyctags", function()
 end, {})
 
 
+PairsV = vim.api.nvim_create_augroup("Pairs", { clear = true })
+vim.api.nvim_create_autocmd({"FileType"}, {
+	group = PairsV,
+	pattern = { "c", "python", "lua", "vim" },
+	callback = function()
+		vim.keymap.set("i", "(", "()", { buffer = 0, silent = true })
+		vim.keymap.set("i", "[", "[]", { buffer = 0, silent = true })
+		vim.keymap.set("i", "{", "{}", { buffer = 0, silent = true })
+		vim.keymap.set("i", "\"", "\"\"", { buffer = 0, silent = true })
+		vim.keymap.set("i", "'", "''", { buffer = 0, silent = true })
+		vim.keymap.set("i", ")", "getline('.')[col('.')-1] == ')' ? '<Right>' : ')'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
+		vim.keymap.set("i", "]", "getline('.')[col('.')-1] == ']' ? '<Right>' : ']'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
+		vim.keymap.set("i", "]", "getline('.')[col('.')-1] == '}' ? '<Right>' : '}'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
+		vim.keymap.set("i", "<BS>", function()
+			local line = vim.fn.getline('.')
+			local col = vim.fn.col('.')
+			local pair = string.sub(line, col - 1, col)
+			local pairs = { ['""']=true, ["''"]=true, ['()']=true, ['[]']=true, ['{}']=true }
+			if pairs[pair] then
+				return "<BS><Del>"
+			else
+				return "<BS>"
+			end
+		end, { buffer = 0, expr = true, silent = true })
+	end
+})
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-vim.keymap.set("n", "<Leader>sc", ":so ~/.config/nvim/init.lua <CR>")
-vim.keymap.set("n", "<Leader><Esc>", function()
-	Forty_Two_pattern()
-end, { silent = true })
-vim.keymap.set("n", "<Leader>ft", function()
-	Open_file_tree()
-end, { silent = true })
-vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
 vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
 vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
 vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
 vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
+
+vim.keymap.set("n", "<Leader>n", ":next<CR>", { silent = true })
+vim.keymap.set("n", "<Leader>p", ":prev<CR>", { silent = true })
+vim.keymap.set("n", "<Leader>bf", ":let g:netrw_banner = 1<CR>:Ex<CR>", { silent = true })
+vim.keymap.set("n", "<Leader>sc", ":so ~/.config/nvim/init.lua <CR>", { silent = true })
+vim.keymap.set("n", "<Leader>ft", function()
+	Open_file_tree()
+end, { silent = true })
+vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
+
+vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
+vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
+vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
+
+vim.keymap.set("n", "<Leader>q", "<C-\\><C-n>:q!<CR>", { silent = true })
+vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
+vim.keymap.set("n", "<Leader><Esc>", function()
+	Forty_Two_pattern()
+end, { silent = true })
+vim.keymap.set("n", "<CR>", "za", { silent = true })
+vim.keymap.set({ "n", "v", "t" }, "qa", ":qa!<CR>", { silent = true })
 MidnightNexus()
