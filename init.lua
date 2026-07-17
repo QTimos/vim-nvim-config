@@ -107,7 +107,7 @@ function MidnightNexus()
 	highlight(0, "Debug", { fg = colors.red })
 
 	-- UI
-	highlight(0, "CursorLine",   { bg = colors.bg_alt })
+	highlight(0, "CursorLine",   { underline = true, bg = colors.bg_alt })
 	highlight(0, "CursorColumn", { bg = colors.bg_alt })
 	highlight(0, "ColorColumn",  { bg = colors.bg_alt })
 	highlight(0, "CursorLineNr", { fg = colors.yellow, bg = colors.bg, bold = true, })
@@ -818,12 +818,6 @@ Config = {
 	toggle_keymap = "<Leader>ter",
 	kill_keymap = "<Leader>q",
 	terminal_mappings = true,
-	padding = {
-		top = 1,
-		right = 6,
-		bottom = 1,
-		left = 6
-	},
 	title = "Floating Terminal",
 	title_pos = "center"
 }
@@ -834,21 +828,94 @@ function GetKey()
 	end
 	return vim.api.nvim_get_current_buf()
 end
-function CreateFloatingWindow()
-	local width = math.floor(vim.o.columns * config.width)
-	local height = math.floor(vim.o.lines * config.height)
-	local opts = {
+function CreateFloatingWindow(buf)
+	local width = math.floor(vim.o.columns * Config.width)
+	local height = math.floor(vim.o.lines * Config.height)
+	local win = vim.api.nvim_open_win(buf, true, {
 		relative = "editor",
-		row = math.floor((vim.o.lines - config.height)/2),
-		col = math.floor((vim.o.columns - config.width)/2),
-		width = config.width-12,
-		height = config.height-2,
+		row = math.floor((vim.o.lines - vim.o.cmdheight - height)/2),
+		col = math.floor((vim.o.columns - width)/2),
+		width = width,
+		height = height,
 		style = "minimal",
-		border = config.border,
-		title = config.title,
-		title_pos = config.title_pos
-	}
+		border = Config.border,
+		title = Config.title,
+		title_pos = Config.title_pos
+	})
+	vim.wo[win].winblend = Config.winblend
+	vim.wo[win].cursorline = true
+	return win
 end
+function ToggleTerminal()
+	local key = GetKey()
+	local entry = TermRegistry[key]
+	if entry and entry.win and vim.api.nvim_win_is_valid(entry.win) then
+		vim.api.nvim_win_close(entry.win, true)
+		entry.win = nil
+		return
+	end
+	for k, e in pairs(TermRegistry) do
+		if k ~= key and e.win and vim.api.nvim_win_is_valid(e.win) then
+			vim.api.nvim_win_close(e.win, true)
+			e.win = nil
+		end
+	end
+	if entry and entry.buf and vim.api.nvim_buf_is_valid(entry.buf) then
+		entry.win = CreateFloatingWindow(entry.buf)
+		vim.cmd("startinsert")
+		return
+	end
+	local cwd = vim.fn.expand("%:p:h")
+	if cwd == "" then
+		cwd = vim.fn.getcwd()
+	end
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.b[buf].source_buf = key
+	local win = CreateFloatingWindow(buf)
+	vim.fn.termopen(Config.shell or vim.o.shell, {
+		cwd = cwd,
+		on_exit = function()
+			if TermRegistry[key] and TermRegistry[key].win and vim.api.nvim_win_is_valid(TermRegistry[key].win) then
+				vim.api.nvim_win_close(TermRegistry[key].win, true)
+			end
+			TermRegistry[key] = nil
+		end,
+	})
+	vim.bo[buf].buflisted = false
+	vim.keymap.set({ "t", "n" }, Config.toggle_keymap, function()
+		ToggleTerminal()
+	end, { buffer = buf, noremap = true, silent = true })
+	vim.keymap.set({ "t", "n" }, Config.kill_keymap, function()
+		KillTerminal()
+	end, { buffer = buf, noremap = true, silent = true })
+	vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
+	TermRegistry[key] = { buf = buf, win = win }
+	vim.cmd("startinsert")
+end
+function KillTerminal()
+	local key = GetKey()
+	local entry = TermRegistry[key]
+	if not entry then
+		return
+	end
+	if entry.win and vim.api.nvim_win_is_valid(entry.win) then
+		vim.api.nvim_win_close(entry.win, true)
+	end
+	if entry.buf and vim.api.nvim_buf_is_valid(entry.buf) then
+		vim.fn.jobstop(vim.b[entry.buf].terminal_job_id)
+		vim.api.nvim_buf_delete(entry.buf, { force = true })
+	end
+	TermRegistry[key] = nil
+end
+TermOpsV = vim.api.nvim_create_augroup("TermOps", { clear = true })
+vim.api.nvim_create_autocmd("TermOpen", {
+	group = TermOpsV,
+	pattern = "*",
+	callback = function()
+		vim.opt_local.number = false
+		vim.opt_local.relativenumber = false
+	end
+})
 
 
 
@@ -1066,6 +1133,103 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 	end
 })
 
+
+LSPBootstrapV = vim.api.nvim_create_augroup("LSPBootstrap", { clear = true })
+BinDir = vim.fn.stdpath("config").."/bin"
+vim.fn.mkdir(BinDir, "p")
+vim.env.PATH = BinDir..":"..vim.env.PATH
+Servers = {
+	python = {
+		name = "pyright",
+		cmd_name = "pyright-langserver",
+		check = function()
+			return vim.fn.executable("pyright-langserver") == 1
+		end,
+		install_cmd = string.format(
+			"npm install --prefix '%s' pyright && ln -sf '%s/node_modules/.bin/pyright-langserver' '%s/pyright-langserver'",
+			BinDir, BinDir, BinDir
+		),
+		lsp_cmd = { "pyright-langserver", "--stdio" },
+		filetypes = { "python" },
+		root_markers = { "pyproject.toml", "setup.py", ".git" },
+	},
+	c = {
+		name = "clangd",
+		cmd_name = "clangd",
+		check = function()
+			return vim.fn.executable("clangd") == 1
+		end,
+		install_cmd = nil,
+		lsp_cmd = { "clangd" },
+		filetypes = { "c", "cpp" },
+		root_markers = { "compile_commands.json", ".git" },
+	},
+	lua = {
+		name = "lua_ls",
+		cmd_name = "lua-language-server",
+		check = function()
+			return vim.fn.executable("lua-language-server") == 1
+		end,
+		install_cmd = string.format(
+			"rm -rf '%s/tmp_lualsp' && " ..
+			"git clone --depth=1 --recurse-submodules https://github.com/LuaLS/lua-language-server '%s/tmp_lualsp' && " ..
+			"cd '%s/tmp_lualsp' && ./make.sh && " ..
+			"cp -r '%s/tmp_lualsp/bin' '%s/lua-language-server-dist' && " ..
+			"ln -sf '%s/lua-language-server-dist/lua-language-server' '%s/lua-language-server' && " ..
+			"rm -rf '%s/tmp_lualsp'",
+			BinDir, BinDir, BinDir, BinDir, BinDir, BinDir, BinDir, BinDir
+		),
+		lsp_cmd = { "lua-language-server" },
+		filetypes = { "lua" },
+		root_markers = { ".luarc.json", ".git" },
+	},
+}
+function BootstrapAndStart(server, bufnr)
+	if server.check() then
+		vim.lsp.start({
+			name = server.name,
+			cmd = server.lsp_cmd,
+			filetypes = server.filetypes,
+			root_dir = vim.fs.root(bufnr, server.root_markers),
+		})
+		return
+	end
+	if not server.install_cmd then
+		vim.notify("[Bootstrap] "..server.name.." not found and has no auto-install (install manually)", vim.log.levels.WARN)
+		return
+	end
+	vim.notify("[Bootstrap] Installing "..server.name.."...")
+	vim.fn.jobstart(server.install_cmd, {
+		cwd = BinDir,
+		on_exit = function(_, code)
+			if code == 0 then
+				vim.notify("[Bootstrap] "..server.name.." installed")
+				vim.lsp.start({
+					name = server.name,
+					cmd = server.lsp_cmd,
+					filetypes = server.filetypes,
+					root_dir = vim.fs.root(bufnr, server.root_markers),
+				})
+			else
+				vim.notify("[Bootstrap] failed to install "..server.name, vim.log.levels.ERROR)
+			end
+		end,
+	})
+end
+vim.api.nvim_create_autocmd("FileType", {
+	group = LSPBootstrapV,
+	pattern = { "python", "c", "cpp", "lua" },
+	callback = function(args)
+		local ft = vim.bo[args.buf].filetype
+		local key = (ft == "cpp") and "c" or ft
+		local server = Servers[key]
+		if server then
+			BootstrapAndStart(server, args.buf)
+		end
+	end,
+})
+
+
 vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
 vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
 vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
@@ -1080,9 +1244,9 @@ vim.keymap.set("n", "<Leader>ft", function()
 end, { silent = true })
 vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
 
-vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
-vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
-vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
+vim.keymap.set("n", Config.toggle_keymap, function()
+	ToggleTerminal()
+end, { noremap = true, silent = true })
 
 vim.keymap.set("n", "<Leader>q", "<C-\\><C-n>:q!<CR>", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
@@ -1090,5 +1254,6 @@ vim.keymap.set("n", "<Leader><Esc>", function()
 	Forty_Two_pattern()
 end, { silent = true })
 vim.keymap.set("n", "<CR>", "za", { silent = true })
-vim.keymap.set({ "n", "v", "t" }, "qa", ":qa!<CR>", { silent = true })
+vim.keymap.set({ "n", "v" }, "<Leader>qa", ":qa!<CR>", { silent = true })
+vim.keymap.set("t", "<Leader>qa", "<C-\\><C-n>:qa!<CR>", { silent = true })
 MidnightNexus()
