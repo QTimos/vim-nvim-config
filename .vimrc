@@ -1,14 +1,42 @@
 vim9script
+syntax on
+filetype on
+filetype plugin indent on
+execute "set mouse=a"
 g:mapleader = ' '
-set nomodeline
-set modelines=0
 
+# General settings
+set modelines=0
+set number
+set relativenumber
+set noswapfile
+set showcmd
+set termguicolors
+set pumheight=10
+set complete=.,b,u,t
+set completeopt=menuone,noinsert,noselect
+
+# Folds & indentation
+set tabstop=4
+set shiftwidth=4
+set softtabstop=4
+set noexpandtab
+set foldmethod=syntax
+set foldlevelstart=99
+set foldcolumn=1
+set cursorline
+set colorcolumn=80
+set list
+set listchars=tab:»-,trail:·,extends:›,precedes:‹
+
+# Colorscheme- Midnight Nexus
 def g:MidnightNexus()
 	set background=dark
 	hi clear
 	syntax reset
 
 	# Terminal
+	hi Terminal guifg=#C0CAF5 guibg=#0F111A
 	g:terminal_color_0  = "#0F111A"
 	g:terminal_color_1  = "#F7768E"
 	g:terminal_color_2  = "#9ECE6A"
@@ -190,12 +218,7 @@ def g:MidnightNexus()
 	hi SpellLocal gui=undercurl guisp=#9ECE6A
 enddef
 
-def g:Str_in_str(str: string, pattern: string): bool
-	return stridx(str, pattern) != -1
-enddef
-
-
-
+# File skeletons
 def g:PY_skeleton()
 	if &filetype != 'python'
 		echo "You are not in an python file!!"
@@ -216,8 +239,6 @@ def g:PY_skeleton()
 	endfor
 enddef
 command! PYSkell call g:PY_skeleton()
-
-
 def g:CSS_skeleton()
 	if &filetype != 'css'
 		echo "You are not in an css file!!"
@@ -291,7 +312,6 @@ def g:CSS_skeleton()
 	endfor
 enddef
 command! CSSSkell call g:CSS_skeleton()
-
 def g:HTML_skeleton()
 	if &filetype != 'html'
 		echo "You are not in an html file!!"
@@ -317,7 +337,449 @@ enddef
 command! HTMLSkell call g:HTML_skeleton()
 
 
+# Helpers
+def g:Str_in_str(str: string, pattern: string): bool
+	return stridx(str, pattern) != -1
+enddef
 
+
+# 42 header pattern
+var USER =  "hdyani"
+def g:Get_file_update_time_string(file: string): string
+	if !filereadable(file)
+		return ''
+	endif
+	var raw = system('stat --format=%y ' .. shellescape(file))
+	if v:shell_error != 0 || empty(raw)
+		return ''
+	endif
+	var parts = split(raw)
+	if len(parts) < 2
+		return ''
+	endif
+	var date = substitute(parts[0], '-', '/', 'g')
+	var time = split(parts[1], '\.')[0]
+	return 'Updated: ' .. date .. ' ' .. time .. ' by '
+enddef
+def g:Get_file_creation_time_string(file: string): string
+	if !filereadable(file)
+		return ''
+	endif
+	var raw = system('stat --format=%w ' .. shellescape(file))
+	if v:shell_error != 0 || empty(raw) || raw =~ '^\-'
+		raw = system('stat --format=%z ' .. shellescape(file))
+		if v:shell_error != 0 || empty(raw)
+			return ''
+		endif
+	endif
+	var parts = split(raw)
+	if len(parts) < 2
+		return ''
+	endif
+	var date = substitute(parts[0], '-', '/', 'g')
+	var time = split(parts[1], '\.')[0]
+	return 'Created: ' .. date .. ' ' .. time .. ' by '
+enddef
+def g:Pad_username(user_name: string, base_spaces: number): list<any>
+	if strlen(user_name) > 9
+		return [user_name[: 8], repeat(' ', base_spaces)]
+	endif
+	return [user_name, repeat(' ', base_spaces + (9 - strlen(user_name)))]
+enddef
+def g:Get_filename_line(file_name: string): string
+	var name = strlen(file_name) > 41 ? file_name[: 40] : file_name
+	var spaces = repeat(' ', 10 + (41 - strlen(name)))
+	return '/*   ' .. name .. spaces .. ':+:      :+:    :+:   */'
+enddef
+def g:Get_mail_line(user_name: string): string
+	var [name, spaces] = g:Pad_username(user_name, 19)
+	return '/*   By: ' .. name .. ' <marvin@42.fr>' .. spaces .. '+#+  +:+       +#+        */'
+enddef
+def g:Get_created_line(user_name: string, full_path: string): string
+	var time_str = g:Get_file_creation_time_string(full_path)
+	if empty(time_str)
+		return ''
+	endif
+	var [name, spaces] = g:Pad_username(user_name, 9)
+	return '/*   ' .. time_str .. name .. spaces .. '#+#    #+#             */'
+enddef
+def g:Get_updated_line(user_name: string, full_path: string): string
+	var time_str = g:Get_file_update_time_string(full_path)
+	if empty(time_str)
+		return ''
+	endif
+	var [name, spaces] = g:Pad_username(user_name, 8)
+	return '/*   ' .. time_str .. name .. spaces .. '###   ########.fr       */'
+enddef
+def g:Pattern_update()
+	var user_name = empty(USER) ? systemlist('echo $USER')[0] : USER
+	var full_path = expand('%:p')
+	var file_name = expand('%:t')
+	if empty(file_name) || !filereadable(full_path)
+		return
+	endif
+	var mail_line    = getline(6)
+	var created_line = getline(8)
+	var updated_line = getline(9)
+	if !g:Str_in_str(mail_line, 'By')
+			|| !g:Str_in_str(created_line, 'Created')
+			|| !g:Str_in_str(updated_line, 'Updated')
+		return
+	endif
+	var updated_line_str  = g:Get_updated_line(user_name, full_path)
+	var filename_line_str = g:Get_filename_line(file_name)
+
+	if empty(updated_line_str) || empty(filename_line_str)
+		return
+	endif
+	setline(4, filename_line_str)
+	setline(9, updated_line_str)
+enddef
+def g:Forty_Two_pattern()
+	var full_path = expand('%:p')
+	var file_name = expand('%:t')
+	var user_name = empty(USER) ? systemlist('echo $USER')[0] : USER
+	if empty(file_name) || empty(user_name)
+		return
+	endif
+	if !filereadable(full_path)
+		echo "File does not exist or is not readable!"
+		return
+	endif
+	if fnamemodify(file_name, ':e') != 'c' && fnamemodify(file_name, ':e') != 'h'
+		return
+	endif
+	var mail_line    = getline(6)
+	var created_line = getline(8)
+	var updated_line = getline(9)
+	if g:Str_in_str(mail_line, 'By')
+			&& g:Str_in_str(created_line, 'Created')
+			&& g:Str_in_str(updated_line, 'Updated')
+		g:Pattern_update()
+		return
+	endif
+	var filename_line_str = g:Get_filename_line(file_name)
+	var mail_line_str     = g:Get_mail_line(user_name)
+	var created_line_str  = g:Get_created_line(user_name, full_path)
+	var updated_line_str  = g:Get_updated_line(user_name, full_path)
+	if empty(filename_line_str) || empty(mail_line_str)
+			|| empty(created_line_str) || empty(updated_line_str)
+		echo "Failed to generate header lines!"
+		return
+	endif
+	var lines = [
+		'/* ************************************************************************** */',
+		'/*                                                                            */',
+		'/*                                                        :::      ::::::::   */',
+		filename_line_str,
+		'/*                                                    +:+ +:+         +:+     */',
+		mail_line_str,
+		'/*                                                +#+#+#+#+#+   +#+           */',
+		created_line_str,
+		updated_line_str,
+		'/*                                                                            */',
+		'/* ************************************************************************** */',
+		''
+	]
+	for i in range(len(lines) - 1, 0, -1)
+		append(0, lines[i])
+	endfor
+enddef
+augroup FtPatterMappings
+	autocmd!
+	autocmd BufWritePre * g:Pattern_update()
+augroup END
+
+
+# Netrw / file explorer
+def g:Open_file_tree()
+	var buftypes = []
+	for i in range(1, winnr('$'))
+		add(buftypes, getwinvar(i, '&filetype'))
+	endfor
+	var tree_is_open = index(buftypes, 'netrw')
+	if tree_is_open != -1
+		echo "You already have a Explorer instance opened!!!"
+		return
+	endif
+	g:netrw_banner = 0
+	execute ":25vsplit"
+	execute "Ex"
+enddef
+def g:Open_file_under_cursor_while_split()
+	var file_name = expand("<cfile>")
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. file_name
+	echo full_path
+	if empty(full_path)
+		return
+	elseif isdirectory(full_path)
+		execute "Ex " .. fnameescape(full_path)
+		execute "cd " .. fnameescape(full_path)
+		return
+	else
+		execute "cd " .. fnameescape(directory)
+		execute "wincmd l"
+		execute "e " .. full_path
+	endif
+enddef
+def g:Open_file_under_cursor()
+	var file_name = expand("<cfile>")
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. file_name
+	if isdirectory(full_path)
+		execute "Ex " .. fnameescape(full_path)
+		execute "cd " .. fnameescape(full_path)
+		return
+	endif
+	execute "cd %:p:h"
+	execute "e " .. fnameescape(full_path)
+	execute "only"
+enddef
+def g:Open_file_under_cursor_in_vsplit()
+	var file_name = expand("<cfile>")
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. file_name
+	if isdirectory(full_path)
+		execute "Ex " .. fnameescape(full_path)
+		execute "cd " .. fnameescape(full_path)
+		return
+	endif
+	execute "wincmd l"
+	execute "vs " .. fnameescape(full_path)
+	var thisbuf = bufnr("%")
+	var lastwin = winnr("#")
+	var lastbuf = winbufnr(lastwin)
+	execute "buffer " .. lastbuf
+	execute "wincmd l"
+	execute "buffer " .. thisbuf
+enddef
+def g:Create_new_file()
+	var f_name = input("\nInput the name of the file/directory (directories must end with a /): ", "", "file")
+	if empty(f_name) || f_name !~ '\S'
+		echo "\nFile or Directory name must not be empty or contain only spaces!!!"
+		return
+	endif
+	var directory = b:netrw_curdir
+	var full_path = directory .. "/" .. f_name
+	if filereadable(full_path) || isdirectory(full_path)
+		echo "\nFile or Directory already exists!!!"
+		return
+	endif
+	if f_name[-1] == "/"
+		var ret_str = system('mkdir -p' .. full_path)
+		if v:shell_error != 0
+			echo "\nYou don't have the required permissions to create this directory!!"
+			return
+		endif
+	else
+		var ret_str = system('touch ' .. full_path)
+		if v:shell_error != 0
+			echo "\nYou don't have the required permissions to create this file!!"
+			return
+		endif
+	endif
+	call feedkeys("<CR>", 'n')
+	execute "Ex"
+enddef
+def g:NetrwResize(timer: number)
+	if winnr('$') == 2
+		for i in range(1, winnr('$'))
+			if getwinvar(i, '&filetype') == 'netrw'
+				win_execute(win_getid(i), 'vertical resize 25')
+			endif
+		endfor
+	endif
+enddef
+def g:CdToCurrentFile()
+	execute "cd %:p:h"
+enddef
+augroup CdToFile
+	autocmd!
+	autocmd BufEnter * g:CdToCurrentFile()
+augroup END
+augroup NetrwResize
+	autocmd!
+	autocmd WinClosed * timer_start(10, g:NetrwResize)
+augroup END
+def g:NetrwMaps()
+	set colorcolumn=
+	silent! nunmap <buffer> <CR>
+	silent! nunmap <buffer> <Space>
+	silent! nunmap <buffer> <C-l>
+	silent! nunmap <buffer> <C-h>
+	silent! nunmap <buffer> <C-k>
+	silent! nunmap <buffer> <C-j>
+	silent! nunmap <buffer> %
+	silent! nunmap <buffer> v
+	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor()<CR>
+	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor_while_split()<CR>
+	nnoremap <silent> <Leader>s<CR> :call Open_file_under_cursor_in_vsplit()<CR>
+	nnoremap <silent> <nowait> % :call Create_new_file()<CR>
+	nnoremap <silent> <C-l> <C-w>l
+	nnoremap <silent> <C-h> <C-w>h
+	nnoremap <silent> <C-k> <C-w>k
+	nnoremap <silent> <C-j> <C-w>j
+enddef
+augroup MyCustomMappings
+	autocmd!
+	autocmd FileType netrw g:NetrwMaps()
+augroup END
+
+
+# Terminal
+var term_registry: dict<dict<number>> = {}
+var WINID_NO_PAR = -1
+var BUFFER_HANDLER_NO_PAR = -1
+def g:Close_terminal(flag: number = 0)
+	if flag == 1
+		var current_src_buf = ""
+		if &buftype == 'terminal' && exists('b:source_buf')
+			current_src_buf = string(b:source_buf)
+		else
+			current_src_buf = string(bufnr())
+		endif
+		if has_key(term_registry, current_src_buf)
+			var term_data = term_registry[current_src_buf]
+			if term_data.win_id != -1
+				popup_close(term_data.win_id)
+				term_registry[current_src_buf].win_id = -1
+			endif
+			if term_data.term_buf != -1
+				term_setkill(term_data.term_buf, "kill")
+				term_registry[current_src_buf].term_buf = -1
+			endif
+			remove(term_registry, current_src_buf)
+		endif
+	elseif flag == 2
+		popup_close(WINID_NO_PAR)
+		WINID_NO_PAR = -1
+		term_setkill(BUFFER_HANDLER_NO_PAR, "kill")
+		BUFFER_HANDLER_NO_PAR = -1
+	else
+		return
+	endif
+enddef
+def g:Popup_terminal(command = "NONE")
+	var ccc = ""
+	var winwidth = &columns
+	var winheight = &lines
+	var termwidth = float2nr(winwidth * 0.8)
+	var termheight = float2nr(winheight * 0.8)
+	var buftype = &buftype
+	if command == "NONE"
+		var shell = fnamemodify(&shell, ':t')
+		var buff_was_open = 0
+		ccc = shell
+		var current_src_buf = ""
+		if &buftype == 'terminal' && exists('b:source_buf')
+			current_src_buf = string(b:source_buf)
+		else
+			current_src_buf = string(bufnr())
+		endif
+		if !has_key(term_registry, current_src_buf)
+			term_registry[current_src_buf] = { term_buf: -1, win_id: -1 }
+		endif
+		var term_data = term_registry[current_src_buf]
+		if term_data.term_buf == -1 || bufexists(term_data.term_buf) == 0
+			var file_dir = expand('%:p:h')
+			var parent_buf = bufnr()
+			term_data.term_buf = term_start(ccc, {
+				hidden: 1,
+				term_rows: termheight,
+				term_cols: termwidth,
+				term_finish: "close",
+				cwd: file_dir
+			})
+			term_registry[current_src_buf].term_buf = term_data.term_buf
+			setbufvar(term_data.term_buf, 'source_buf', parent_buf)
+		else
+			buff_was_open = 1
+		endif
+		if term_data.win_id == -1
+			for key in keys(term_registry)
+				if term_registry[key].win_id != -1
+					popup_close(term_registry[key].win_id)
+					term_registry[key].win_id = -1
+				endif
+			endfor
+			term_data.win_id = popup_create(term_data.term_buf, {
+				minwidth: termwidth,
+				minheight: termheight,
+				maxwidth: termwidth,
+				maxheight: termheight,
+				drag: 1, close: "button",
+				highlight: "normal",
+				border: [1, 1, 1, 1],
+				pos: "center",
+				mapping: 1
+			})
+			term_registry[current_src_buf].win_id = term_data.win_id
+			execute "silent! tunmap <buffer> <C-k>"
+			execute "silent! tunmap <buffer> <C-j>"
+			execute "silent! tunmap <buffer> <C-h>"
+			execute "silent! tunmap <buffer> <C-l>"
+			execute "tnoremap <buffer> <C-k> \<Esc>OA"
+			execute "tnoremap <buffer> <C-j> \<Esc>OB"
+			execute "tnoremap <buffer> <C-h> \<Esc>OD"
+			execute "tnoremap <buffer> <C-l> \<Esc>OC"
+			execute "tnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
+			execute "nnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
+			execute "tnoremap <silent> <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
+		elseif buftype == "terminal"
+			popup_close(term_data.win_id)
+			term_data.win_id = -1
+			term_registry[current_src_buf].win_id = -1
+			return
+		endif
+		if buff_was_open == 1
+			call feedkeys("i", 'n')
+		endif
+	else
+		ccc = command
+		BUFFER_HANDLER_NO_PAR = term_start(ccc, {
+			hidden: 1,
+			term_rows: termheight,
+			term_cols: termwidth,
+		})
+		WINID_NO_PAR = popup_create(BUFFER_HANDLER_NO_PAR, {
+			minwidth: termwidth,
+			minheight: termheight,
+			maxwidth: termwidth,
+			maxheight: termheight,
+			drag: 1,
+			close: "button",
+			highlight: "normal",
+			border: [1, 1, 1, 1],
+			pos: "center",
+			mapping: 1
+		})
+		win_execute(WINID_NO_PAR, "noremap <buffer> <silent> q <C-\\><C-n>:call Close_terminal(2)<CR>")
+	endif
+enddef
+
+
+# Clipboard
+def g:Copy_selected_text_to_clipboard()
+	var clipboard = ""
+	if !empty($WAYLAND_DISPLAY)
+		clipboard = "wl-copy"
+	elseif !empty($DISPLAY)
+		clipboard = "xclip -selection clipboard"
+	else
+		echoerr "Can't tell what clipboard your system is using"
+		return
+	endif
+	if executable(split(clipboard)[0]) == 0
+		echoerr "Missing tool: " .. clipboard
+		return
+	endif
+	execute "normal! gv\"vy"
+	var lines = getreg("v", 1, 1)
+	system(clipboard, lines)
+enddef
+
+# Comment toggling
 def g:ToggleCommentBlock(open_tag: string, close_tag: string, firstline: number, lastline: number)
 	if firstline == lastline
 		var l = getline(firstline)
@@ -403,487 +865,6 @@ def g:ToggleComment()
 	endif
 enddef
 
-
-
-
-
-var USER =  "hdyani"
-def g:Get_file_update_time_string(file: string): string
-	if !filereadable(file)
-		return ''
-	endif
-	var raw = system('stat --format=%y ' .. shellescape(file))
-	if v:shell_error != 0 || empty(raw)
-		return ''
-	endif
-	var parts = split(raw)
-	if len(parts) < 2
-		return ''
-	endif
-	var date = substitute(parts[0], '-', '/', 'g')
-	var time = split(parts[1], '\.')[0]
-	return 'Updated: ' .. date .. ' ' .. time .. ' by '
-enddef
-def g:Get_file_creation_time_string(file: string): string
-	if !filereadable(file)
-		return ''
-	endif
-	var raw = system('stat --format=%w ' .. shellescape(file))
-	if v:shell_error != 0 || empty(raw) || raw =~ '^\-'
-		raw = system('stat --format=%z ' .. shellescape(file))
-		if v:shell_error != 0 || empty(raw)
-			return ''
-		endif
-	endif
-	var parts = split(raw)
-	if len(parts) < 2
-		return ''
-	endif
-	var date = substitute(parts[0], '-', '/', 'g')
-	var time = split(parts[1], '\.')[0]
-	return 'Created: ' .. date .. ' ' .. time .. ' by '
-enddef
-def g:Pad_username(user_name: string, base_spaces: number): list<any>
-	if strlen(user_name) > 9
-		return [user_name[: 8], repeat(' ', base_spaces)]
-	endif
-	return [user_name, repeat(' ', base_spaces + (9 - strlen(user_name)))]
-enddef
-def g:Get_filename_line(file_name: string): string
-	var name = strlen(file_name) > 41 ? file_name[: 40] : file_name
-	var spaces = repeat(' ', 10 + (41 - strlen(name)))
-	return '/*   ' .. name .. spaces .. ':+:      :+:    :+:   */'
-enddef
-def g:Get_mail_line(user_name: string): string
-	var [name, spaces] = g:Pad_username(user_name, 19)
-	return '/*   By: ' .. name .. ' <marvin@42.fr>' .. spaces .. '+#+  +:+       +#+        */'
-enddef
-def g:Get_created_line(user_name: string, full_path: string): string
-	var time_str = g:Get_file_creation_time_string(full_path)
-	if empty(time_str)
-		return ''
-	endif
-	var [name, spaces] = g:Pad_username(user_name, 9)
-	return '/*   ' .. time_str .. name .. spaces .. '#+#    #+#             */'
-enddef
-def g:Get_updated_line(user_name: string, full_path: string): string
-	var time_str = g:Get_file_update_time_string(full_path)
-	if empty(time_str)
-		return ''
-	endif
-	var [name, spaces] = g:Pad_username(user_name, 8)
-	return '/*   ' .. time_str .. name .. spaces .. '###   ########.fr       */'
-enddef
-def g:Pattern_update()
-	var user_name = empty(USER) ? systemlist('echo $USER')[0] : USER
-	var full_path = expand('%:p')
-	var file_name = expand('%:t')
-
-	if empty(file_name) || !filereadable(full_path)
-		return
-	endif
-
-	var mail_line    = getline(6)
-	var created_line = getline(8)
-	var updated_line = getline(9)
-
-	if !g:Str_in_str(mail_line, 'By')
-			|| !g:Str_in_str(created_line, 'Created')
-			|| !g:Str_in_str(updated_line, 'Updated')
-		return
-	endif
-
-	var updated_line_str  = g:Get_updated_line(user_name, full_path)
-	var filename_line_str = g:Get_filename_line(file_name)
-
-	if empty(updated_line_str) || empty(filename_line_str)
-		return
-	endif
-
-	setline(4, filename_line_str)
-	setline(9, updated_line_str)
-enddef
-def g:Forty_Two_pattern()
-	var full_path = expand('%:p')
-	var file_name = expand('%:t')
-	var user_name = empty(USER) ? systemlist('echo $USER')[0] : USER
-
-	if empty(file_name) || empty(user_name)
-		return
-	endif
-	if !filereadable(full_path)
-		echo "File does not exist or is not readable!"
-		return
-	endif
-	if fnamemodify(file_name, ':e') != 'c' && fnamemodify(file_name, ':e') != 'h'
-		return
-	endif
-
-	var mail_line    = getline(6)
-	var created_line = getline(8)
-	var updated_line = getline(9)
-
-	if g:Str_in_str(mail_line, 'By')
-			&& g:Str_in_str(created_line, 'Created')
-			&& g:Str_in_str(updated_line, 'Updated')
-		g:Pattern_update()
-		return
-	endif
-
-	var filename_line_str = g:Get_filename_line(file_name)
-	var mail_line_str     = g:Get_mail_line(user_name)
-	var created_line_str  = g:Get_created_line(user_name, full_path)
-	var updated_line_str  = g:Get_updated_line(user_name, full_path)
-
-	if empty(filename_line_str) || empty(mail_line_str)
-			|| empty(created_line_str) || empty(updated_line_str)
-		echo "Failed to generate header lines!"
-		return
-	endif
-
-	var lines = [
-		'/* ************************************************************************** */',
-		'/*                                                                            */',
-		'/*                                                        :::      ::::::::   */',
-		filename_line_str,
-		'/*                                                    +:+ +:+         +:+     */',
-		mail_line_str,
-		'/*                                                +#+#+#+#+#+   +#+           */',
-		created_line_str,
-		updated_line_str,
-		'/*                                                                            */',
-		'/* ************************************************************************** */',
-		''
-	]
-
-	for i in range(len(lines) - 1, 0, -1)
-		append(0, lines[i])
-	endfor
-enddef
-augroup FtPatterMappings
-	autocmd!
-	autocmd BufWritePre * g:Pattern_update()
-augroup END
-
-
-def g:Open_file_tree()
-	var buftypes = []
-	for i in range(1, winnr('$'))
-		add(buftypes, getwinvar(i, '&filetype'))
-	endfor
-	var tree_is_open = index(buftypes, 'netrw')
-	if tree_is_open != -1
-		echo "You already have a Explorer instance opened!!!"
-		return
-	endif
-	g:netrw_banner = 0
-	execute ":25vsplit"
-	execute "Ex"
-enddef
-
-
-var term_registry: dict<dict<number>> = {}
-var WINID_NO_PAR = -1
-var BUFFER_HANDLER_NO_PAR = -1
-def g:Close_terminal(flag: number = 0)
-	if flag == 1
-		var current_src_buf = ""
-		if &buftype == 'terminal' && exists('b:source_buf')
-			current_src_buf = string(b:source_buf)
-		else
-			current_src_buf = string(bufnr())
-		endif
-
-		if has_key(term_registry, current_src_buf)
-			var term_data = term_registry[current_src_buf]
-			if term_data.win_id != -1
-				popup_close(term_data.win_id)
-				term_registry[current_src_buf].win_id = -1
-			endif
-			if term_data.term_buf != -1
-				term_setkill(term_data.term_buf, "kill")
-				term_registry[current_src_buf].term_buf = -1
-			endif
-			remove(term_registry, current_src_buf)
-		endif
-	elseif flag == 2
-		popup_close(WINID_NO_PAR)
-		WINID_NO_PAR = -1
-		term_setkill(BUFFER_HANDLER_NO_PAR, "kill")
-		BUFFER_HANDLER_NO_PAR = -1
-	else
-		return
-	endif
-enddef
-
-def g:Popup_terminal(command = "NONE")
-	var ccc = ""
-	var winwidth = &columns
-	var winheight = &lines
-	var termwidth = float2nr(winwidth * 0.8)
-	var termheight = float2nr(winheight * 0.8)
-	var buftype = &buftype
-
-	if command == "NONE"
-		var shell = fnamemodify(&shell, ':t')
-		var buff_was_open = 0
-		ccc = shell
-		var current_src_buf = ""
-		if &buftype == 'terminal' && exists('b:source_buf')
-			current_src_buf = string(b:source_buf)
-		else
-			current_src_buf = string(bufnr())
-		endif
-		if !has_key(term_registry, current_src_buf)
-			term_registry[current_src_buf] = { term_buf: -1, win_id: -1 }
-		endif
-		var term_data = term_registry[current_src_buf]
-		if term_data.term_buf == -1 || bufexists(term_data.term_buf) == 0
-			var file_dir = expand('%:p:h')
-			var parent_buf = bufnr()
-			term_data.term_buf = term_start(ccc, {
-				hidden: 1,
-				term_rows: termheight,
-				term_cols: termwidth,
-				term_finish: "close",
-				cwd: file_dir
-			})
-			term_registry[current_src_buf].term_buf = term_data.term_buf
-			setbufvar(term_data.term_buf, 'source_buf', parent_buf)
-		else
-			buff_was_open = 1
-		endif
-		if term_data.win_id == -1
-			for key in keys(term_registry)
-				if term_registry[key].win_id != -1
-					popup_close(term_registry[key].win_id)
-					term_registry[key].win_id = -1
-				endif
-			endfor
-
-			term_data.win_id = popup_create(term_data.term_buf, {
-				minwidth: termwidth,
-				minheight: termheight,
-				maxwidth: termwidth,
-				maxheight: termheight,
-				drag: 1, close: "button",
-				highlight: "normal",
-				border: [1, 1, 1, 1],
-				pos: "center",
-				mapping: 1
-			})
-			term_registry[current_src_buf].win_id = term_data.win_id
-
-			execute "silent! tunmap <buffer> <C-k>"
-			execute "silent! tunmap <buffer> <C-j>"
-			execute "silent! tunmap <buffer> <C-h>"
-			execute "silent! tunmap <buffer> <C-l>"
-
-			execute "tnoremap <buffer> <C-k> \<Esc>OA"
-			execute "tnoremap <buffer> <C-j> \<Esc>OB"
-			execute "tnoremap <buffer> <C-h> \<Esc>OD"
-			execute "tnoremap <buffer> <C-l> \<Esc>OC"
-
-			execute "tnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
-			execute "nnoremap <silent> <buffer> <Space><Esc> <C-\\><C-n>:call Close_terminal(1)<CR>"
-			execute "tnoremap <silent> <buffer> <Space>ter <C-\\><C-n>:call Popup_terminal()<CR>"
-		elseif buftype == "terminal"
-			popup_close(term_data.win_id)
-			term_data.win_id = -1
-			term_registry[current_src_buf].win_id = -1
-			return
-		endif
-
-		if buff_was_open == 1
-			call feedkeys("i", 'n')
-		endif
-	else
-		ccc = command
-		BUFFER_HANDLER_NO_PAR = term_start(ccc, {
-			hidden: 1,
-			term_rows: termheight,
-			term_cols: termwidth,
-		})
-		WINID_NO_PAR = popup_create(BUFFER_HANDLER_NO_PAR, {
-			minwidth: termwidth,
-			minheight: termheight,
-			maxwidth: termwidth,
-			maxheight: termheight,
-			drag: 1,
-			close: "button",
-			highlight: "normal",
-			border: [1, 1, 1, 1],
-			pos: "center",
-			mapping: 1
-		})
-		win_execute(WINID_NO_PAR, "noremap <buffer> <silent> q <C-\\><C-n>:call Close_terminal(2)<CR>")
-	endif
-enddef
-
-def g:Open_file_under_cursor_while_split()
-	var file_name = expand("<cfile>")
-	var directory = b:netrw_curdir
-	var full_path = directory .. "/" .. file_name
-
-	if empty(full_path)
-		return
-	elseif isdirectory(full_path)
-		execute "Ex " .. fnameescape(full_path)
-		execute "cd " .. fnameescape(full_path)
-		return
-	else
-		execute "cd %:p:h"
-		execute "wincmd l"
-		execute "e " .. file_name
-	endif
-
-enddef
-
-def g:Open_file_under_cursor()
-	var file_name = expand("<cfile>")
-	var directory = b:netrw_curdir
-	var full_path = directory .. "/" .. file_name
-
-	if isdirectory(full_path)
-		execute "Ex " .. fnameescape(full_path)
-		execute "cd " .. fnameescape(full_path)
-		return
-	endif
-
-	execute "cd %:p:h"
-	execute "e " .. fnameescape(full_path)
-	execute "only"
-enddef
-
-def g:Open_file_under_cursor_in_vsplit()
-	var file_name = expand("<cfile>")
-	var directory = b:netrw_curdir
-	var full_path = directory .. "/" .. file_name
-
-	if isdirectory(full_path)
-		execute "Ex " .. fnameescape(full_path)
-		execute "cd " .. fnameescape(full_path)
-		return
-	endif
-
-	execute "wincmd l"
-	execute "vs " .. fnameescape(full_path)
-
-	var thisbuf = bufnr("%")
-	var lastwin = winnr("#")
-	var lastbuf = winbufnr(lastwin)
-
-	execute "buffer " .. lastbuf
-	execute "wincmd l"
-	execute "buffer " .. thisbuf
-enddef
-
-def g:Copy_selected_text_to_clipboard()
-	var clipboard = ""
-	if !empty($WAYLAND_DISPLAY)
-		clipboard = "wl-copy"
-	elseif !empty($DISPLAY)
-		clipboard = "xclip -selection clipboard"
-	else
-		echoerr "Can't tell what clipboard your system is using"
-		return
-	endif
-	if executable(split(clipboard)[0]) == 0
-		echoerr "Missing tool: " .. clipboard
-		return
-	endif
-
-	execute "normal! gv\"vy"
-	var lines = getreg("v", 1, 1)
-	system(clipboard, lines)
-enddef
-
-def g:Create_new_file()
-	var f_name = input("\nInput the name of the file/directory (directories must end with a /): ", "", "file")
-	if empty(f_name) || f_name !~ '\S'
-		echo "\nFile or Directory name must not be empty or contain only spaces!!!"
-		return
-	endif
-	var directory = b:netrw_curdir
-	var full_path = directory .. "/" .. f_name
-
-	if filereadable(full_path) || isdirectory(full_path)
-		echo "\nFile or Directory already exists!!!"
-		return
-	endif
-	if f_name[-1] == "/"
-		var ret_str = system('mkdir -p' .. full_path)
-		if v:shell_error != 0
-			echo "\nYou don't have the required permissions to create this directory!!"
-			return
-		endif
-	else
-		var ret_str = system('touch ' .. full_path)
-		if v:shell_error != 0
-			echo "\nYou don't have the required permissions to create this file!!"
-			return
-		endif
-	endif
-	call feedkeys("<CR>", 'n')
-	execute "Ex"
-enddef
-
-def g:CdToCurrentFile()
-	execute "cd %:p:h"
-enddef
-augroup CdToFile
-	autocmd!
-	autocmd BufEnter * g:CdToCurrentFile()
-augroup END
-
-def g:NetrwMaps()
-	set colorcolumn=
-	silent! nunmap <buffer> <CR>
-	silent! nunmap <buffer> <Space>
-	silent! nunmap <buffer> <C-l>
-	silent! nunmap <buffer> <C-h>
-	silent! nunmap <buffer> <C-k>
-	silent! nunmap <buffer> <C-j>
-	silent! nunmap <buffer> %
-	silent! nunmap <buffer> v
-	nnoremap <buffer> <silent> <Leader><CR> :call Open_file_under_cursor()<CR>
-	nnoremap <buffer> <silent> <CR> :call Open_file_under_cursor_while_split()<CR>
-	nnoremap <silent> <Leader>s<CR> :call Open_file_under_cursor_in_vsplit()<CR>
-	nnoremap <silent> <nowait> % :call Create_new_file()<CR>
-	nnoremap <silent> <C-l> <C-w>l
-	nnoremap <silent> <C-h> <C-w>h
-	nnoremap <silent> <C-k> <C-w>k
-	nnoremap <silent> <C-j> <C-w>j
-enddef
-augroup MyCustomMappings
-	autocmd!
-	autocmd FileType netrw g:NetrwMaps()
-augroup END
-def g:NetrwResize(timer: number)
-	if winnr('$') == 2
-		for i in range(1, winnr('$'))
-			if getwinvar(i, '&filetype') == 'netrw'
-				win_execute(win_getid(i), 'vertical resize 25')
-			endif
-		endfor
-	endif
-enddef
-augroup NetrwResize
-	autocmd!
-	autocmd WinClosed * timer_start(10, g:NetrwResize)
-augroup END
-
-
-set number
-set relativenumber
-set noswapfile
-set showcmd
-execute "set mouse=a"
-
-syntax on
-filetype on
-filetype plugin indent on
-set termguicolors
 
 # C syntax highlighting and tags
 g:c_c99 = 1
@@ -985,13 +966,14 @@ def g:PyCtags()
 	endif
 	echo "Tags generated!"
 enddef
+augroup IndentSettings
+	autocmd!
+	autocmd FileType python setlocal expandtab
+augroup END
 command! Pyctags call g:PyCtags()
 
 
-set complete=.,b,u,t
-set completeopt=menuone,noinsert,noselect
-set pumheight=10
-
+# Auto-pairs
 def PairsSetup()
 	inoremap <buffer> ( ()<Left>
 	inoremap <buffer> [ []<Left>
@@ -1001,7 +983,6 @@ def PairsSetup()
 	inoremap <buffer> <expr> ) getline('.')[col('.') - 1] == ')' ? '<Right>' : ')'
 	inoremap <buffer> <expr> ] getline('.')[col('.') - 1] == ']' ? '<Right>' : ']'
 	inoremap <buffer> <expr> } getline('.')[col('.') - 1] == '}' ? '<Right>' : '}'
-
 	var line = getline('.')
 	var col = col('.')
 	var pair = line[col - 2 : col - 1]
@@ -1017,28 +998,11 @@ augroup Pairs
 augroup END
 
 
-# Folds
-set tabstop=4
-set shiftwidth=4
-set softtabstop=4
-set noexpandtab
-set foldmethod=syntax
-set foldlevelstart=99
-set foldcolumn=1
-set cursorline
-set colorcolumn=80
-set list
-set listchars=tab:»-,trail:·,extends:›,precedes:‹
-augroup IndentSettings
-	autocmd!
-	autocmd FileType python setlocal expandtab
-augroup END
-
+# Keymaps
 nnoremap <silent> <C-l> <C-w>l
 nnoremap <silent> <C-h> <C-w>h
 nnoremap <silent> <C-k> <C-w>k
 nnoremap <silent> <C-j> <C-w>j
-
 nnoremap <silent> <Leader>n :next<CR>
 nnoremap <silent> <Leader>p :prev<CR>
 nnoremap <silent> <Leader>bf :let g:netrw_banner = 1 <CR>:Ex<CR>
@@ -1053,13 +1017,12 @@ tnoremap <silent> <Esc> <C-\><C-n>
 vnoremap <silent> <Leader>y :call Copy_selected_text_to_clipboard()<CR>
 nnoremap <silent> <Leader><Esc> :call Forty_Two_pattern()<CR>
 nnoremap <silent> <CR> za
-
 nnoremap <silent> gcc :call g:ToggleComment()<CR>
 vnoremap <silent> gcc :<C-u>call g:ToggleCommentRange()<CR>
-
 tnoremap <silent> <Leader>qa :qa!<CR>
 nnoremap <silent> <Leader>qa :qa!<CR>
 vnoremap <silent> <Leader>qa :qa!<CR>
+
 
 # Always keep at the bottom
 g:MidnightNexus()

@@ -1,14 +1,21 @@
 vim.g.mapleader = " "
 vim.g.localleader = " "
 
+-- General settings
+vim.opt.modelines = 0
 vim.opt.number = true
 vim.opt.relativenumber = true
 vim.opt.swapfile = false
 vim.opt.showcmd = true
 vim.opt.mouse = "a"
-
 vim.opt.pumheight = 10
-vim.opt.modelines = 0
+vim.opt.cmdheight = 1
+vim.opt.termguicolors = true
+vim.opt.showmode = true
+vim.opt.updatetime = 100
+vim.opt.timeoutlen = 300
+
+-- Folds & indentation
 vim.opt.tabstop = 4
 vim.opt.shiftwidth = 4
 vim.opt.softtabstop = 4
@@ -19,13 +26,8 @@ vim.opt.cursorline = true
 vim.opt.colorcolumn = "80"
 vim.opt.list = true
 vim.opt.listchars = { tab = "»-", trail = "·", extends = "›", precedes = "‹" }
-vim.opt.cmdheight = 1
-vim.opt.termguicolors = true
-vim.opt.showmode = true
 
-vim.opt.updatetime = 100
-vim.opt.timeoutlen = 300
-
+-- Colorscheme- Midnight Nexus
 function MidnightNexus()
 	local highlight = vim.api.nvim_set_hl
 	local colors = {
@@ -309,7 +311,7 @@ function MidnightNexus()
 	highlight(0, "TermCursor", { fg = colors.bg, bg = colors.green })
 end
 
-
+-- File skeletons
 function PY_skeleton()
 	local bufnbr = vim.api.nvim_get_current_buf()
 	local filetype = vim.bo[bufnbr].filetype
@@ -330,7 +332,6 @@ function PY_skeleton()
 	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
 end
 vim.api.nvim_create_user_command("PYskell", PY_skeleton, {})
-
 function CSS_skeleton()
 	local bufnbr = vim.api.nvim_get_current_buf()
 	local filetype = vim.bo[bufnbr].filetype
@@ -404,7 +405,6 @@ function CSS_skeleton()
 	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
 end
 vim.api.nvim_create_user_command("CSSskel", CSS_skeleton, {})
-
 function HTML_skeleton()
 	local bufnbr = vim.api.nvim_get_current_buf()
 	local filetype = vim.bo[bufnbr].filetype
@@ -430,6 +430,7 @@ end
 vim.api.nvim_create_user_command("HTMLskel", HTML_skeleton, {})
 
 
+-- Helpers
 local function split(string, sep)
 	local parts = {}
 	if sep == nil or sep == "" or sep == {} then
@@ -440,7 +441,6 @@ local function split(string, sep)
 	end
 	return parts
 end
-
 local function substitute(string, from, to, flag)
 	local stop = false
 	local new_string = ""
@@ -449,23 +449,21 @@ local function substitute(string, from, to, flag)
 			if flag ~= "g" then
 				stop = true
 			end
-			new_string = new_string .. to
+			new_string = new_string..to
 		else
-			new_string = new_string .. char
+			new_string = new_string..char
 		end
 	end
 	return new_string
 end
-
-function strstr(string, sub)
-	local s, e = string.find(string, sub, 1, true)
+local function strstr(string, sub)
+	local s, _ = string.find(string, sub, 1, true)
 	if s == nil then
 		return false
 	end
 	return true
 end
-
-function table_index(table, value)
+local function table_index(table, value)
 	for i, v in ipairs(table) do
 		if v == value then
 			return i
@@ -475,6 +473,7 @@ function table_index(table, value)
 end
 
 
+-- 42 header pattern
 USER = "hdyani"
 function Get_file_update_time_string(file)
 	if file == "" or file == nil then
@@ -496,7 +495,7 @@ function Get_file_update_time_string(file)
 	end
 	local date = substitute(parts[1], "-", "/", "g")
 	local time = split(parts[2], ".")[1]
-	return "Updated: " .. date .. " " .. time .. " by "
+	return "Updated: "..date.." "..time.." by "
 end
 function Get_file_creation_time_string(file)
 	if file == "" or file == nil then
@@ -518,7 +517,7 @@ function Get_file_creation_time_string(file)
 	end
 	local date = substitute(parts[1], "-", "/", "g")
 	local time = split(parts[2], ".")[1]
-	return 'Created: ' .. date .. ' ' .. time .. ' by '
+	return 'Created: '..date..' '..time..' by '
 end
 function Pad_username(user_name, base_spaces)
 	if #user_name > 9 then
@@ -639,6 +638,8 @@ vim.api.nvim_create_autocmd({"BufWritePre"}, {
 	end,
 })
 
+
+-- Netrw / file explorer
 function Open_file_tree()
 	local buftypes = {}
 	for i = 1, vim.fn.winnr("$") do
@@ -664,9 +665,9 @@ function Open_file_under_cursor_while_split()
 		vim.fn.execute("cd "..vim.fn.fnameescape(full_path))
 		return
 	else
-		vim.fn.execute("cd %:p:h")
+		vim.fn.execute("cd "..vim.fn.fnameescape(directory))
 		vim.fn.execute("wincmd l")
-		vim.fn.execute("e "..file_name)
+		vim.fn.execute("e "..full_path)
 	end
 end
 function Open_file_under_cursor()
@@ -743,6 +744,17 @@ function NetrwResize()
 		end
 	end
 end
+function CdToCurrentFile()
+	vim.fn.execute("cd %:p:h")
+end
+CdToFileGI = vim.api.nvim_create_augroup("CdToFile", { clear = true })
+vim.api.nvim_create_autocmd({"BufEnter"}, {
+	group = CdToFileGI,
+	pattern = "*",
+	callback = function()
+		CdToCurrentFile()
+	end
+})
 NetrwResizeGI = vim.api.nvim_create_augroup("NetrwResize", { clear = true })
 vim.api.nvim_create_autocmd({"WinClosed"}, {
 	group = NetrwResizeGI,
@@ -787,28 +799,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 
 
-function CdToCurrentFile()
-	local filename = vim.fn.expand("%")
-	if filename == nil or filename == "" then
-		print("Could not get the name of the File open in current buffer!!")
-		return
-	end
-	if vim.fn.filereadable(filename) ~= 0 then
-		vim.fn.execute("cd %:p:h")
-	else
-		return
-	end
-end
-CdToFileGI = vim.api.nvim_create_augroup("CdToFile", { clear = true })
-vim.api.nvim_create_autocmd({"BufEnter"}, {
-	group = CdToFileGI,
-	pattern = "*",
-	callback = function()
-		CdToCurrentFile()
-	end
-})
-
-
+-- Terminal
 Config = {
 	width = 0.8,
 	height = 0.8,
@@ -918,7 +909,7 @@ vim.api.nvim_create_autocmd("TermOpen", {
 })
 
 
-
+-- C syntax highlighting and tags
 CSyntaxV = vim.api.nvim_create_augroup("CSyntax", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
 	group = CSyntaxV,
@@ -942,7 +933,7 @@ function CCtags()
 		return
 	end
 	local file_path = vim.fn.expand("%:p:h")
-	local handle = io.popen("echo | " .. compiler .. " -v -x c - 2>&1")
+	local handle = io.popen("echo | "..compiler.." -v -x c - 2>&1")
 	if not handle then
 		return
 	end
@@ -986,6 +977,7 @@ vim.api.nvim_create_user_command("Cctags", function()
 end, {})
 
 
+-- Python syntax highlighting and tags
 local PYSyntaxV = vim.api.nvim_create_augroup("PYSyntax", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
 	group = PYSyntaxV,
@@ -993,11 +985,11 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 	callback = function(args)
 		vim.opt_local.expandtab = true
 		local dir = vim.fn.stdpath("config")
-		local parser = dir .. "/python.so"
+		local parser = dir.."/python.so"
 		pcall(vim.treesitter.language.add, "python", { path = parser })
 		if vim.fn.filereadable(parser) == 0 then
 			print("[Bootstrap] Building tree-sitter-python directly in config folder...")
-			local temp_clone_dir = dir .. "/tmp_clone"
+			local temp_clone_dir = dir.."/tmp_clone"
 			local compile_cmd = string.format(
 				"rm -rf '%s' && " ..
 				"git clone --depth=1 https://github.com '%s' && " ..
@@ -1106,19 +1098,20 @@ vim.api.nvim_create_user_command("Pyctags", function()
 end, {})
 
 
+-- Auto-pairs
 PairsV = vim.api.nvim_create_augroup("Pairs", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
 	group = PairsV,
 	pattern = { "c", "python", "lua", "vim" },
 	callback = function()
-		vim.keymap.set("i", "(", "()", { buffer = 0, silent = true })
-		vim.keymap.set("i", "[", "[]", { buffer = 0, silent = true })
-		vim.keymap.set("i", "{", "{}", { buffer = 0, silent = true })
-		vim.keymap.set("i", "\"", "\"\"", { buffer = 0, silent = true })
-		vim.keymap.set("i", "'", "''", { buffer = 0, silent = true })
+		vim.keymap.set("i", "(", "()<Left>", { buffer = 0, silent = true })
+		vim.keymap.set("i", "[", "[]<Left>", { buffer = 0, silent = true })
+		vim.keymap.set("i", "{", "{}<Left>", { buffer = 0, silent = true })
+		vim.keymap.set("i", "\"", "\"\"<Left>", { buffer = 0, silent = true })
+		vim.keymap.set("i", "'", "''<Left>", { buffer = 0, silent = true })
 		vim.keymap.set("i", ")", "getline('.')[col('.')-1] == ')' ? '<Right>' : ')'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
 		vim.keymap.set("i", "]", "getline('.')[col('.')-1] == ']' ? '<Right>' : ']'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
-		vim.keymap.set("i", "]", "getline('.')[col('.')-1] == '}' ? '<Right>' : '}'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
+		vim.keymap.set("i", "}", "getline('.')[col('.')-1] == '}' ? '<Right>' : '}'", { buffer = 0, expr = true, silent = true, replace_keycodes = false })
 		vim.keymap.set("i", "<BS>", function()
 			local line = vim.fn.getline('.')
 			local col = vim.fn.col('.')
@@ -1134,6 +1127,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 
 
+-- LSP bootstrap
 LSPBootstrapV = vim.api.nvim_create_augroup("LSPBootstrap", { clear = true })
 BinDir = vim.fn.stdpath("config").."/bin"
 vim.fn.mkdir(BinDir, "p")
@@ -1151,38 +1145,53 @@ Servers = {
 		),
 		lsp_cmd = { "pyright-langserver", "--stdio" },
 		filetypes = { "python" },
-		root_markers = { "pyproject.toml", "setup.py", ".git" },
+		root_markers = { "pyproject.toml", "setup.py", ".git" }
 	},
 	c = {
 		name = "clangd",
 		cmd_name = "clangd",
 		check = function()
-			return vim.fn.executable("clangd") == 1
+			return vim.fn.executable(BinDir.."/clangd_dist/bin/clangd") == 1
 		end,
-		install_cmd = nil,
-		lsp_cmd = { "clangd" },
+		install_cmd = table.concat({
+			"rm -rf '"..BinDir.."/clangd_dist' '".. BinDir.."/clangd_tmp.zip' && ",
+			"URL=$(curl -s https://api.github.com/repos/clangd/clangd/releases/latest ",
+			"| grep -o '\"browser_download_url\": *\"[^\"]*clangd-linux-[0-9.]*\\.zip\"' ",
+			"| grep -o 'https://[^\"]*') && ",
+			"echo \"Resolved URL: $URL\" && ",
+			"curl -L -o '"..BinDir.."/clangd_tmp.zip' \"$URL\" && ",
+			"unzip -q '"..BinDir.."/clangd_tmp.zip' -d '"..BinDir.."' && ",
+			"rm -f '"..BinDir.."/clangd_tmp.zip' && ",
+			"mv '"..BinDir.."'/clangd_* '"..BinDir.."/clangd_dist'",
+		}),
+		lsp_cmd = { BinDir.."/clangd_dist/bin/clangd" },
 		filetypes = { "c", "cpp" },
-		root_markers = { "compile_commands.json", ".git" },
+		root_markers = { "compile_commands.json", ".git" }
 	},
 	lua = {
 		name = "lua_ls",
 		cmd_name = "lua-language-server",
 		check = function()
-			return vim.fn.executable("lua-language-server") == 1
+			return vim.fn.executable(BinDir.."/lua-language-server-dist/bin/lua-language-server") == 1
 		end,
 		install_cmd = string.format(
-			"rm -rf '%s/tmp_lualsp' && " ..
+			"rm -rf '%s/tmp_lualsp' '%s/lua-language-server-dist' && " ..
 			"git clone --depth=1 --recurse-submodules https://github.com/LuaLS/lua-language-server '%s/tmp_lualsp' && " ..
 			"cd '%s/tmp_lualsp' && ./make.sh && " ..
-			"cp -r '%s/tmp_lualsp/bin' '%s/lua-language-server-dist' && " ..
-			"ln -sf '%s/lua-language-server-dist/lua-language-server' '%s/lua-language-server' && " ..
-			"rm -rf '%s/tmp_lualsp'",
-			BinDir, BinDir, BinDir, BinDir, BinDir, BinDir, BinDir, BinDir
+			"mv '%s/tmp_lualsp' '%s/lua-language-server-dist'",
+			BinDir, BinDir, BinDir, BinDir, BinDir, BinDir
 		),
-		lsp_cmd = { "lua-language-server" },
+		lsp_cmd = { BinDir.."/lua-language-server-dist/bin/lua-language-server" },
 		filetypes = { "lua" },
 		root_markers = { ".luarc.json", ".git" },
-	},
+		settings = {
+			Lua = {
+				diagnostics = {
+					globals = { "vim" }
+				},
+			}
+		}
+	}
 }
 function BootstrapAndStart(server, bufnr)
 	if server.check() then
@@ -1191,6 +1200,7 @@ function BootstrapAndStart(server, bufnr)
 			cmd = server.lsp_cmd,
 			filetypes = server.filetypes,
 			root_dir = vim.fs.root(bufnr, server.root_markers),
+			settings = server.settings
 		})
 		return
 	end
@@ -1230,11 +1240,44 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 
+-- Completions
+vim.api.nvim_create_autocmd("LspAttach", {
+	group = LSPBootstrapV,
+	callback = function(args)
+		local client = vim.lsp.get_client_by_id(args.data.client_id)
+		if client and client:supports_method("textDocument/completion") then
+			vim.lsp.completion.enable(true, client.id, args.buf, { autotrigger = false })
+		end
+	end,
+})
+vim.keymap.set("i", "<S-n>", function()
+	vim.lsp.completion.get()
+end)
+vim.keymap.set("i", "<Tab>", function()
+	if vim.fn.pumvisible() == 1 then
+		return "<C-n>"
+	end
+	return "<Tab>"
+end, { expr = true })
+vim.keymap.set("i", "<S-Tab>", function()
+	if vim.fn.pumvisible() == 1 then
+		return "<C-p>"
+	end
+	return "<S-Tab>"
+end, { expr = true })
+vim.keymap.set("i", "<CR>", function()
+	if vim.fn.pumvisible() == 1 then
+		return "<C-y>"
+	end
+	return "<CR>"
+end, { expr = true })
+
+
+-- Keymaps
 vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
 vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
 vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
 vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
-
 vim.keymap.set("n", "<Leader>n", ":next<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>p", ":prev<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>bf", ":let g:netrw_banner = 1<CR>:Ex<CR>", { silent = true })
@@ -1243,11 +1286,9 @@ vim.keymap.set("n", "<Leader>ft", function()
 	Open_file_tree()
 end, { silent = true })
 vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
-
 vim.keymap.set("n", Config.toggle_keymap, function()
 	ToggleTerminal()
 end, { noremap = true, silent = true })
-
 vim.keymap.set("n", "<Leader>q", "<C-\\><C-n>:q!<CR>", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
 vim.keymap.set("n", "<Leader><Esc>", function()
@@ -1256,4 +1297,7 @@ end, { silent = true })
 vim.keymap.set("n", "<CR>", "za", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>qa", ":qa!<CR>", { silent = true })
 vim.keymap.set("t", "<Leader>qa", "<C-\\><C-n>:qa!<CR>", { silent = true })
+
+
+-- Always keep at the bottom
 MidnightNexus()
