@@ -6,105 +6,188 @@ set modelines=0
 def g:MidnightNexus()
 	set background=dark
 	hi clear
+	syntax reset
 
-	# base
-	hi Normal 	   guifg=#C0CAF5 guibg=#0F111A
-	hi Comment         guifg=#3B4261 gui=italic
+	# Terminal
+	g:terminal_color_0  = "#0F111A"
+	g:terminal_color_1  = "#F7768E"
+	g:terminal_color_2  = "#9ECE6A"
+	g:terminal_color_3  = "#E0AF68"
+	g:terminal_color_4  = "#7AA2F7"
+	g:terminal_color_5  = "#BB9AF7"
+	g:terminal_color_6  = "#7DCFFF"
+	g:terminal_color_7  = "#C0CAF5"
+	g:terminal_color_8  = "#3B4261"
+	g:terminal_color_9  = "#F7768E"
+	g:terminal_color_10 = "#9ECE6A"
+	g:terminal_color_11 = "#E0AF68"
+	g:terminal_color_12 = "#7AA2F7"
+	g:terminal_color_13 = "#BB9AF7"
+	g:terminal_color_14 = "#7DCFFF"
+	g:terminal_color_15 = "#C0CAF5"
 
-	# constants
-	hi Constant        guifg=#7DCFFF
-	hi String          guifg=#9ECE6A
-	hi Character       guifg=#9ECE6A
-	hi Number          guifg=#E0AF68
-	hi Boolean         guifg=#E0AF68
-	hi Float           guifg=#E0AF68
+	# Base
+	hi Normal guifg=#C0CAF5 guibg=#0F111A
+	hi NormalFloat guifg=#C0CAF5 guibg=#171B26
+	hi FloatBorder guifg=#7AA2F7 guibg=#171B26
+	hi Comment guifg=#3B4261 gui=italic cterm=italic
 
-	# identifiers
-	hi Identifier      guifg=#7DCFFF
-	hi Function        guifg=#7AA2F7
+	# Legacy Syntax
+	hi Constant guifg=#7DCFFF
+	hi String guifg=#9ECE6A
+	hi Character guifg=#9ECE6A
+	hi Number guifg=#E0AF68
+	hi Boolean guifg=#F7768E
+	hi Float guifg=#E0AF68
+	hi Identifier guifg=#C0CAF5
+	hi Function guifg=#7AA2F7
+	hi Statement guifg=#BB9AF7 gui=bold cterm=bold
+	hi Conditional guifg=#BB9AF7 gui=bold cterm=bold
+	hi Repeat guifg=#BB9AF7 gui=bold cterm=bold
+	hi Label guifg=#E0AF68
+	hi Operator guifg=#BB9AF7
+	hi Keyword guifg=#BB9AF7 gui=bold cterm=bold
+	hi Exception guifg=#F7768E gui=bold cterm=bold
+	hi PreProc guifg=#FFB86C
+	hi Include guifg=#BB9AF7
+	hi Define guifg=#BB9AF7
+	hi Macro guifg=#FFB86C
+	hi PreCondit guifg=#FFB86C
+	hi Type guifg=#E0AF68 gui=bold cterm=bold
+	hi StorageClass guifg=#BB9AF7
+	hi Structure guifg=#BB9AF7
+	hi Typedef guifg=#BB9AF7
+	hi Special guifg=#FFB86C
+	hi SpecialChar guifg=#F7768E
+	hi Tag guifg=#F7768E
+	hi Delimiter guifg=#C0CAF5
+	hi SpecialComment guifg=#3B4261
+	hi Debug guifg=#F7768E
 
-	# statements
-	hi Statement       guifg=#BB9AF7 gui=bold
-	hi Conditional     guifg=#BB9AF7 gui=bold
-	hi Repeat          guifg=#BB9AF7 gui=bold
-	hi Label           guifg=#BB9AF7
-	hi Operator        guifg=#BB9AF7
-	hi Keyword         guifg=#BB9AF7 gui=bold
-	hi Exception       guifg=#F7768E
+	# Cursor / Line Numbers
+	hi CursorLine guibg=#171B26
+	hi CursorColumn guibg=#171B26
+	hi ColorColumn guibg=#171B26
+	hi CursorLineNr guifg=#E0AF68 guibg=#0F111A gui=bold cterm=bold
+	hi LineNr guifg=#3B4261 guibg=#0F111A
+	hi SignColumn guifg=#3B4261 guibg=#0F111A
 
-	# preprocessor
-	hi PreProc         guifg=#E0AF68
-	hi Include         guifg=#BB9AF7
-	hi Define          guifg=#BB9AF7
-	hi Macro           guifg=#E0AF68
-	hi PreCondit       guifg=#E0AF68
+	# Statusline / Splits
+	hi StatusLine guifg=#C0CAF5 guibg=#171B26
+	hi StatusLineNC guifg=#3B4261 guibg=#0F111A
+	hi VertSplit guifg=#3B4261 guibg=#0F111A
+	hi WinSeparator guifg=#3B4261 guibg=#0F111A
+	hi TabLine guifg=#C0CAF5 guibg=#171B26
+	hi TabLineFill guifg=#C0CAF5 guibg=#0F111A
+	hi TabLineSel guifg=#0F111A guibg=#7AA2F7
 
-	# types
-	hi Type            guifg=#7DCFFF gui=bold
-	hi StorageClass    guifg=#BB9AF7
-	hi Structure       guifg=#BB9AF7
-	hi Typedef         guifg=#BB9AF7
+	# Titles / Directories
+	hi Title guifg=#7AA2F7 gui=bold cterm=bold
+	hi Directory guifg=#7AA2F7
 
-	# special
-	hi Special         guifg=#7AA2F7
-	hi SpecialChar     guifg=#E0AF68
-	hi Tag             guifg=#7AA2F7
-	hi Delimiter       guifg=#C0CAF5
-	hi SpecialComment  guifg=#3B4261
-	hi Debug           guifg=#F7768E
+	# Popup Menu
+	hi Pmenu guifg=#C0CAF5 guibg=#171B26
+	hi PmenuSel guifg=#0F111A guibg=#7AA2F7 gui=bold cterm=bold
+	hi PmenuSbar guibg=#3B4261
+	hi PmenuThumb guibg=#C0CAF5
 
-	# ui
-	hi Error           guifg=#F7768E guibg=#0F111A gui=bold
-	hi Todo            guifg=#E0AF68 guibg=#0F111A gui=bold
-	hi Underlined      guifg=#7AA2F7 gui=underline
+	# Search
+	hi Search guifg=#0F111A guibg=#E0AF68
+	hi IncSearch guifg=#0F111A guibg=#FFB86C gui=bold cterm=bold
+	hi CurSearch guifg=#0F111A guibg=#FFB86C gui=bold cterm=bold
 
-	hi StatusLine      guifg=#C0CAF5 guibg=#3B4261
-	hi StatusLineNC    guifg=#3B4261 guibg=#0F111A
-	hi VertSplit       guifg=#3B4261 guibg=#0F111A
+	# Visual
+	hi Visual guibg=#2A3A5A
+	hi VisualNOS guibg=#171B26
+	hi MatchParen guifg=#0F111A guibg=#7DCFFF gui=bold cterm=bold
 
-	hi TabLine         guifg=#C0CAF5 guibg=#3B4261
-	hi TabLineFill     guifg=#C0CAF5 guibg=#0F111A
-	hi TabLineSel      guifg=#0F111A guibg=#7AA2F7
+	# Messages
+	hi Error guifg=#F7768E gui=bold cterm=bold
+	hi ErrorMsg guifg=#F7768E gui=bold cterm=bold
+	hi WarningMsg guifg=#E0AF68
+	hi MoreMsg guifg=#9ECE6A
+	hi Question guifg=#7AA2F7
+	hi ModeMsg guifg=#BB9AF7
+	hi Todo guifg=#E0AF68 gui=bold cterm=bold
+	hi Underlined guifg=#7AA2F7 gui=underline cterm=underline
 
-	hi Title           guifg=#7AA2F7 gui=bold
-	hi LineNr          guifg=#3B4261 guibg=#0F111A
-	hi CursorLineNr    guifg=#7AA2F7 guibg=#0F111A gui=bold
-	hi CursorLine 	   guibg=#1a1b26
-	hi CursorColumn    guibg=#3B4261
+	# Folding
+	hi Folded guifg=#3B4261 guibg=#171B26
+	hi FoldColumn guifg=#3B4261 guibg=#0F111A
 
-	hi ColorColumn     guibg=#3B4261
-	hi SignColumn      guifg=#3B4261 guibg=#0F111A
+	# Diff
+	hi DiffAdd guifg=#9ECE6A guibg=#0A0C14
+	hi DiffDelete guifg=#F7768E guibg=#0A0C14
+	hi DiffChange guifg=#E0AF68 guibg=#0A0C14
+	hi DiffText guifg=#7AA2F7 guibg=#0A0C14
 
-	hi Folded          guifg=#3B4261 guibg=#0F111A
-	hi FoldColumn      guifg=#3B4261 guibg=#0F111A
+	# Diagnostics
+	hi DiagnosticError guifg=#F7768E
+	hi DiagnosticWarn guifg=#E0AF68
+	hi DiagnosticInfo guifg=#7AA2F7
+	hi DiagnosticHint guifg=#7DCFFF
+	hi DiagnosticOk guifg=#9ECE6A
+	hi DiagnosticUnderlineError gui=undercurl guisp=#F7768E
+	hi DiagnosticUnderlineWarn gui=undercurl guisp=#E0AF68
+	hi DiagnosticUnderlineInfo gui=undercurl guisp=#7AA2F7
+	hi DiagnosticUnderlineHint gui=undercurl guisp=#7DCFFF
 
-	hi Pmenu           guifg=#C0CAF5 guibg=#3B4261
-	hi PmenuSel        guifg=#0F111A guibg=#7AA2F7
-	hi PmenuSbar       guibg=#3B4261
-	hi PmenuThumb      guibg=#C0CAF5
+	# Markdown
+	hi markdownH1 guifg=#F7768E gui=bold cterm=bold
+	hi markdownH2 guifg=#FFB86C gui=bold cterm=bold
+	hi markdownH3 guifg=#E0AF68 gui=bold cterm=bold
+	hi markdownH4 guifg=#9ECE6A gui=bold cterm=bold
+	hi markdownH5 guifg=#7DCFFF gui=bold cterm=bold
+	hi markdownH6 guifg=#BB9AF7 gui=bold cterm=bold
+	hi markdownCode guifg=#9ECE6A
+	hi markdownCodeBlock guifg=#9ECE6A
+	hi markdownUrl guifg=#7AA2F7 gui=underline cterm=underline
 
-	hi Search          guifg=#0F111A guibg=#E0AF68
-	hi IncSearch       guifg=#0F111A guibg=#9ECE6A
-	hi Visual          guifg=#0F111A guibg=#7AA2F7
-	hi VisualNOS       guibg=#3B4261
+	# Misc
+	hi WinBar guifg=#C0CAF5 guibg=#0F111A
+	hi WinBarNC guifg=#3B4261 guibg=#0F111A
+	hi EndOfBuffer guifg=#0F111A
+	hi Conceal guifg=#3B4261
+	hi Whitespace guifg=#3B4261
+	hi NonText guifg=#3B4261
+	hi SpecialKey guifg=#3B4261
+	hi QuickFixLine guibg=#171B26
+	hi WildMenu guifg=#0F111A guibg=#7AA2F7
+	hi Cursor guifg=#0F111A guibg=#C0CAF5
+	hi lCursor guifg=#0F111A guibg=#C0CAF5
+	hi TermCursor guifg=#0F111A guibg=#9ECE6A
 
-	hi MatchParen      guifg=#0F111A guibg=#7DCFFF gui=bold
-
-	hi NonText         guifg=#3B4261
-	hi SpecialKey      guifg=#3B4261
-	hi EndOfBuffer     guifg=#3B4261
-
-	hi Directory       guifg=#7AA2F7
-	hi ErrorMsg        guifg=#F7768E guibg=#0F111A gui=bold
-	hi WarningMsg      guifg=#E0AF68
-	hi MoreMsg         guifg=#9ECE6A
-	hi ModeMsg         guifg=#7AA2F7
-	hi Question        guifg=#7AA2F7
-
-	hi DiffAdd         guifg=#9ECE6A guibg=#0F111A
-	hi DiffChange      guifg=#E0AF68 guibg=#0F111A
-	hi DiffDelete      guifg=#F7768E guibg=#0F111A
-	hi DiffText        guifg=#7AA2F7 guibg=#0F111A
+	# Vimscript groups
+	hi vimCommand guifg=#BB9AF7 gui=bold cterm=bold
+	hi vimVar guifg=#7DCFFF
+	hi vimFunctionScope guifg=#7DCFFF cterm=bold
+	hi vimVarScope guifg=#7DCFFF cterm=bold
+	hi vimDefName guifg=#7AA2F7
+	hi vim9UserFunc guifg=#7AA2F7
+	hi vimFuncName guifg=#F5C2E7
+	hi vimFunction guifg=#F5C2E7
+	hi vimFuncParam guifg=#F5C2E7
+	hi vimComment guifg=#3B4261 gui=italic cterm=italic
+	hi vimLet guifg=#E0AF68
+	hi vimFBVar guifg=#E0AF68
+	hi vimHiGroup guifg=#E0AF68
+	hi vimHiGuiFgBg guifg=#7AA2F7
+	hi vimHiGui guifg=#7AA2F7
+	hi vimHiKeyList guifg=#BB9AF7
+	hi vimHiGuiRgb guifg=#9ECE6A
+	hi vimHiAttrib guifg=#9ECE6A
+	hi vimOptionVarName guifg=#9ECE6A
+	hi vimOptionVar guifg=#9ECE6A cterm=bold
+	hi vimHiCTerm guifg=#7AA2F7
+	hi CursorIM guifg=#0F111A guibg=#F5C2E7
+	hi ToolbarLine guibg=#171B26
+	hi ToolbarButton guifg=#C0CAF5 guibg=#3B4261 gui=bold cterm=bold
+	hi StatusLineTerm guifg=#C0CAF5 guibg=#171B26
+	hi StatusLineTermNC guifg=#3B4261 guibg=#0F111A
+	hi SpellBad gui=undercurl guisp=#F7768E
+	hi SpellCap gui=undercurl guisp=#E0AF68
+	hi SpellRare gui=undercurl guisp=#7DCFFF
+	hi SpellLocal gui=undercurl guisp=#9ECE6A
 enddef
 
 def g:Str_in_str(str: string, pattern: string): bool
@@ -141,7 +224,7 @@ def g:CSS_skeleton()
 		return
 	endif
 	var lines = [
-			":root {",
+		":root {",
 		"	--primary: ;",
 		"	--secondary: ;",
 		"	--bg-body: ;",
@@ -405,8 +488,8 @@ def g:Pattern_update()
 	var updated_line = getline(9)
 
 	if !g:Str_in_str(mail_line, 'By')
-		|| !g:Str_in_str(created_line, 'Created')
-		|| !g:Str_in_str(updated_line, 'Updated')
+			|| !g:Str_in_str(created_line, 'Created')
+			|| !g:Str_in_str(updated_line, 'Updated')
 		return
 	endif
 
@@ -441,8 +524,8 @@ def g:Forty_Two_pattern()
 	var updated_line = getline(9)
 
 	if g:Str_in_str(mail_line, 'By')
-		&& g:Str_in_str(created_line, 'Created')
-		&& g:Str_in_str(updated_line, 'Updated')
+			&& g:Str_in_str(created_line, 'Created')
+			&& g:Str_in_str(updated_line, 'Updated')
 		g:Pattern_update()
 		return
 	endif
@@ -453,7 +536,7 @@ def g:Forty_Two_pattern()
 	var updated_line_str  = g:Get_updated_line(user_name, full_path)
 
 	if empty(filename_line_str) || empty(mail_line_str)
-		|| empty(created_line_str) || empty(updated_line_str)
+			|| empty(created_line_str) || empty(updated_line_str)
 		echo "Failed to generate header lines!"
 		return
 	endif
@@ -725,7 +808,7 @@ def g:Create_new_file()
 	var full_path = directory .. "/" .. f_name
 
 	if filereadable(full_path) || isdirectory(full_path)
-		 echo "\nFile or Directory already exists!!!"
+		echo "\nFile or Directory already exists!!!"
 		return
 	endif
 	if f_name[-1] == "/"
@@ -779,17 +862,17 @@ augroup MyCustomMappings
 	autocmd FileType netrw g:NetrwMaps()
 augroup END
 def g:NetrwResize(timer: number)
-    if winnr('$') == 2
-        for i in range(1, winnr('$'))
-            if getwinvar(i, '&filetype') == 'netrw'
-                win_execute(win_getid(i), 'vertical resize 25')
-            endif
-        endfor
-    endif
+	if winnr('$') == 2
+		for i in range(1, winnr('$'))
+			if getwinvar(i, '&filetype') == 'netrw'
+				win_execute(win_getid(i), 'vertical resize 25')
+			endif
+		endfor
+	endif
 enddef
 augroup NetrwResize
-    autocmd!
-    autocmd WinClosed * timer_start(10, g:NetrwResize)
+	autocmd!
+	autocmd WinClosed * timer_start(10, g:NetrwResize)
 augroup END
 
 
@@ -804,7 +887,19 @@ filetype on
 filetype plugin indent on
 set termguicolors
 
-# C syntax highlighting
+# C syntax highlighting and tags
+g:c_c99 = 1
+g:c_c11 = 1
+g:c_posix = 1
+g:c_space_errors = 1
+def CSetup()
+	syntax match cFunctionCall /\(\bif\|\bwhile\|\bfor\|\bswitch\|\breturn\)\@!\w\+\s*(/me=e-1
+	highlight cFunctionCall guifg=#F5C2E7
+enddef
+augroup CSyntax
+	autocmd!
+	autocmd FileType c CSetup()
+augroup END
 def g:CCtags()
 	if executable('ctags') == 0
 		echo "Ctags doesn't exist on your machine!!!"
@@ -840,20 +935,23 @@ def g:CCtags()
 enddef
 command! Cctags call g:CCtags()
 
-g:c_c99 = 1
-g:c_c11 = 1
-g:c_posix = 1
-g:c_space_errors = 1
-def CSetup()
-	syntax match cFunctionCall /\(\bif\|\bwhile\|\bfor\|\bswitch\|\breturn\)\@!\w\+\s*(/me=e-1
-	highlight cFunctionCall guifg=#9ECE6A
-enddef
-augroup CSyntax
-	autocmd!
-	autocmd FileType c CSetup()
-augroup END
 
-# Python syntax highlighting
+# Python syntax highlighting and tags
+g:python_highlight_all = 1
+g:python_highlight_builtins = 1
+g:python_highlight_builtin_funcs = 1
+g:python_highlight_builtin_objs = 1
+g:python_highlight_exceptions = 1
+g:python_highlight_string_formatting = 1
+g:python_highlight_indent_errors = 1
+def PySetup()
+	syntax match pyFunctionCall /\(\bif\|\bwhile\|\bfor\|\bwith\|\bexcept\|\bassert\|\bprint\|\breturn\)\@!\w\+\s*(/me=e-1
+	highlight pyFunctionCall guifg=#F5C2E7
+enddef
+augroup PySyntax
+	autocmd!
+	autocmd FileType python PySetup()
+augroup END
 def g:PyCtags()
 	if executable('ctags') == 0
 		echo "Ctags doesn't exist on your machine!!!"
@@ -891,21 +989,6 @@ def g:PyCtags()
 enddef
 command! Pyctags call g:PyCtags()
 
-g:python_highlight_all = 1
-g:python_highlight_builtins = 1
-g:python_highlight_builtin_funcs = 1
-g:python_highlight_builtin_objs = 1
-g:python_highlight_exceptions = 1
-g:python_highlight_string_formatting = 1
-g:python_highlight_indent_errors = 1
-def PySetup()
-	syntax match pyFunctionCall /\(\bif\|\bwhile\|\bfor\|\bwith\|\bexcept\|\bassert\|\bprint\|\breturn\)\@!\w\+\s*(/me=e-1
-	highlight pyFunctionCall guifg=#7DCFFF
-enddef
-augroup PySyntax
-	autocmd!
-	autocmd FileType python PySetup()
-augroup END
 
 set complete=.,b,u,t
 set completeopt=menuone,noinsert,noselect
@@ -947,7 +1030,7 @@ set foldcolumn=1
 set cursorline
 set colorcolumn=80
 set list
-set listchars=tab:»\ ,trail:·,extends:›,precedes:‹
+set listchars=tab:»-,trail:·,extends:›,precedes:‹
 augroup IndentSettings
 	autocmd!
 	autocmd FileType python setlocal expandtab
