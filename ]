@@ -1358,18 +1358,10 @@ local function ScreenPos(win, pos)
 	end
 	return { row = sp.row, col = sp.col }
 end
-local function CharUnder(pos)
-	local line = vim.fn.getline(pos[1])
-	local col = pos[2] + 1
-	local ch = vim.fn.strcharpart(line, vim.fn.charidx(line, col - 1), 1)
-	if ch == "" then
-		ch = " "
-	end
-	return ch
-end
 local function EnsureFloat()
 	if FloatBuf == nil or not vim.api.nvim_buf_is_valid(FloatBuf) then
 		FloatBuf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_lines(FloatBuf, 0, -1, false, { "█" })
 	end
 	if FloatWin == nil or not vim.api.nvim_win_is_valid(FloatWin) then
 		FloatWin = vim.api.nvim_open_win(FloatBuf, false, {
@@ -1382,8 +1374,6 @@ local function EnsureFloat()
 			focusable = false,
 			zindex = 200,
 		})
-		vim.api.nvim_set_hl(0, "AnimCursor", { reverse = true })
-		vim.wo[FloatWin].winhighlight = "Normal:AnimCursor"
 	end
 end
 function CursorAnimate()
@@ -1398,7 +1388,6 @@ function CursorAnimate()
 	local to = ScreenPos(win, NewCurPos)
 	if from and to and (from.row ~= to.row or from.col ~= to.col) then
 		EnsureFloat()
-		vim.api.nvim_buf_set_lines(FloatBuf, 0, -1, false, { CharUnder(NewCurPos) })
 		if Timer then
 			Timer:stop()
 			Timer:close()
@@ -1420,7 +1409,9 @@ function CursorAnimate()
 				})
 			end
 			if i >= steps then
-				if Timer == nil then return end
+				if Timer == nil then
+					return
+				end
 				Timer:stop()
 				Timer:close()
 				Timer = nil
