@@ -745,6 +745,7 @@ function NetrwResize()
 	end
 end
 function CdToCurrentFile()
+	if vim.bo.buftype ~= "" then return end
 	vim.fn.execute("cd %:p:h")
 end
 CdToFileGI = vim.api.nvim_create_augroup("CdToFile", { clear = true })
