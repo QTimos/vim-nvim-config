@@ -1250,6 +1250,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 		end
 	end,
 })
+pcall(vim.keymap.del, "i", "<S-n>", { silent = true })
 vim.keymap.set("i", "<S-n>", function()
 	vim.lsp.completion.get()
 end)
@@ -1271,6 +1272,75 @@ vim.keymap.set("i", "<CR>", function()
 	end
 	return "<CR>"
 end, { expr = true })
+
+
+function StatusLineSetup()
+	local colors = { bg = "#0F111A", bg_alt = "#171B26", bg_dark = "#0A0C14",
+		fg = "#C0CAF5", fg_dark = "#A9B1D6", grey = "#3B4261", red = "#F7768E",
+		green = "#9ECE6A", yellow = "#E0AF68", blue = "#7AA2F7", magenta = "#BB9AF7",
+		cyan = "#7DCFFF", orange = "#FFB86C", pink = "#F5C2E7", selection = "#2A3A5A",
+	}
+	local hl = vim.api.nvim_set_hl
+	hl(0, "MyStlNormal", { bg = colors.cyan, fg = colors.bg, bold = true })
+	hl(0, "MyStlInsert", { bg = colors.yellow, fg = colors.bg, italic = true, bold = true })
+	hl(0, "MyStlVisual", { bg = colors.pink, fg = colors.bg, italic = true })
+	hl(0, "MyStlCommand", { bg = colors.red, fg = colors.bg, bold = true })
+	hl(0, "MyStlReplace", { bg = colors.magenta, fg = colors.bg, bold = true })
+	hl(0, "MyStlTerminal", { bg = colors.fg_dark, fg = colors.bg, bold = true, italic = true })
+	hl(0, "MyStlFileType", { bg = colors.magenta, fg = colors.bg, bold = true, italic = true })
+	hl(0, "MyStlFileLines", { bg = colors.bg_alt, fg = colors.pink, bold = true, italic = true })
+	vim.o.laststatus = 2
+	vim.o.statusline = "%!v:lua.StatusLineRender()"
+end
+function StatusLineRender()
+	local mode_names = {
+	  n = "NORMAL", i = "INSERT", v = "VISUAL", V = "V-LINE",
+	  ["\22"] = "V-BLOCK", c = "COMMAND", R = "REPLACE", t = "TERMINAL",
+	}
+	local mode_hl = {
+	  n = "MyStlNormal", i = "MyStlInsert", v = "MyStlVisual", V = "MyStlVisual",
+	  ["\22"] = "MyStlVisual", c = "MyStlCommand", R = "MyStlReplace", t = "MyStlTerminal",
+	}
+	local file_types = { lua        = "", vim        = "", python     = "",
+		py         = "", c          = "", h          = "", cpp        = "",
+		hpp        = "", cc         = "", cxx        = "", java       = "",
+		javascript = "", js         = "", typescript = "", ts         = "",
+		jsx        = "", tsx        = "", html       = "", css        = "",
+		scss       = "", json       = "", yaml       = "", yml        = "",
+		toml       = "", xml        = "󰗀", sh         = "", bash       = "",
+		zsh        = "", fish       = "󰈺", make       = "", makefile   = "",
+		cmake      = "", go         = "", rust       = "", rs         = "",
+		php        = "", ruby       = "", perl       = "", swift      = "",
+		kotlin     = "", dart       = "", r          = "󰟔", julia      = "",
+		sql        = "", dockerfile = "󰡨", docker     = "󰡨", gitconfig  = "󰊢",
+		gitignore  = "󰊢", gitattributes = "󰊢", markdown   = "", md         = "",
+		tex        = "󰙩", txt        = "󰈙", conf       = "", config     = "",
+		ini        = "", log        = "󰌱", csv        = "󰈛", tsv        = "󰈛",
+		pdf        = "", zip        = "󰗄", tar        = "󰗄", gz         = "󰗄",
+		xz         = "󰗄", mp3        = "󰎆", wav        = "󰎆", flac       = "󰎆",
+		mp4        = "󰈫", mkv        = "󰈫", avi        = "󰈫", png        = "󰸭",
+		jpg        = "󰸭", jpeg       = "󰸭", gif        = "󰵸", svg        = "󰜡",
+		lock       = "󰌾", default    = "󰈚",
+	}
+	local m = vim.api.nvim_get_mode().mode
+	local mode_comp = string.format("%%#%s#  ⟮%s⟯ %%*", mode_hl[m] or "MyStlNormal", mode_names[m] or m)..string.format("%%#%s#⚛  %%*", mode_hl[m] or "MyStlNormal")
+	local name = vim.fn.expand("%:t")
+	if name == "" then name = "[No Name]" end
+	local file_comp = vim.bo.modified and (name.." [+]") or name
+	local file_type = string.format("%%#%s#  %s %s  %%*", "MyStlFileType", file_types[vim.bo.filetype] or file_types.default, vim.bo.filetype)
+	local file_lines = string.format("%%#%s#  %s  %%*", "MyStlFileLines", vim.fn.line(".")..":"..vim.fn.col(".").." ")
+
+	local focused = vim.g.statusline_winid == vim.api.nvim_get_current_win()
+	if not focused then
+		return "  " .. file_comp
+	end
+	return table.concat({
+		mode_comp, " ", file_comp,
+		"%=",
+		file_type,
+		file_lines,
+	})
+end
 
 
 -- Keymaps
@@ -1301,3 +1371,4 @@ vim.keymap.set("t", "<Leader>qa", "<C-\\><C-n>:qa!<CR>", { silent = true })
 
 -- Always keep at the bottom
 MidnightNexus()
+StatusLineSetup()
