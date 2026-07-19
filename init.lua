@@ -917,7 +917,6 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 	pattern = "c",
 	callback = function(args)
 		vim.treesitter.start(args.buf, "c")
-		vim.api.nvim_set_hl(0, "@function.call", { fg = "#9ECE6A", force = true })
 	end
 })
 function CCtags()
@@ -979,9 +978,9 @@ end, {})
 
 
 -- Python syntax highlighting and tags
-local PYSyntaxV = vim.api.nvim_create_augroup("PYSyntax", { clear = true })
+local PYSyntaxGI = vim.api.nvim_create_augroup("PYSyntax", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
-	group = PYSyntaxV,
+	group = PYSyntaxGI,
 	pattern = "python",
 	callback = function(args)
 		vim.opt_local.expandtab = true
@@ -993,7 +992,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 			local temp_clone_dir = dir.."/tmp_clone"
 			local compile_cmd = string.format(
 				"rm -rf '%s' && " ..
-				"git clone --depth=1 https://github.com '%s' && " ..
+				"git clone --depth=1 https://github.com/tree-sitter/tree-sitter-python.git '%s' && " ..
 				"cd '%s' && " ..
 				"cc -o '%s' -shared -fPIC -O2 src/parser.c src/scanner.c -Isrc && " ..
 				"rm -rf '%s'",
@@ -1043,7 +1042,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 			] @keyword
 		]]
 		vim.treesitter.query.set("python", "highlights", query_string)
-		local success = pcall(vim.treesitter.start, args.buf, "python")
+		pcall(vim.treesitter.start, args.buf, "python")
 	end
 })
 function PyCtags()
@@ -1099,6 +1098,146 @@ vim.api.nvim_create_user_command("Pyctags", function()
 end, {})
 
 
+-- Rust syntax highlighting
+local RSSyntaxGI = vim.api.nvim_create_augroup("RSSyntax", { clear = true })
+vim.api.nvim_create_autocmd({"FileType"}, {
+	group = RSSyntaxGI,
+	pattern = "rust",
+	callback = function(args)
+		vim.opt_local.expandtab = true
+		local dir = vim.fn.stdpath("config")
+		local parser = dir.."/rust.so"
+		pcall(vim.treesitter.language.add, "rust", { path = parser })
+		if vim.fn.filereadable(parser) == 0 then
+			print("[Bootstrap] Building tree-sitter-rust directly in config folder...")
+			local temp_clone_dir = dir.."/tmp_clone"
+			local compile_cmd = string.format(
+				"rm -rf '%s' && " ..
+				"git clone --depth=1 https://github.com/tree-sitter/tree-sitter-rust.git '%s' && " ..
+				"cd '%s' && " ..
+				"cc -o '%s' -shared -fPIC -O2 src/parser.c src/scanner.c -Isrc && " ..
+				"rm -rf '%s'",
+				temp_clone_dir, temp_clone_dir, temp_clone_dir, parser, temp_clone_dir
+			)
+			vim.fn.jobstart(compile_cmd, {
+				on_exit = function(_, exit_code)
+					if exit_code == 0 then
+						print("[Bootstrap] Rust parser successfully compiled!")
+						pcall(vim.treesitter.language.add, "rust", { path = parser })
+						pcall(vim.treesitter.start, args.buf, "rust")
+					end
+				end
+			})
+		end
+		local query_string= [[
+			(type_identifier) @type
+			(primitive_type) @type.builtin
+			(field_identifier) @property
+			((identifier) @constant
+			 (#match? @constant "^[A-Z][A-Z\\d_]+$"))
+			((identifier) @constructor
+			 (#match? @constructor "^[A-Z]"))
+			((scoped_identifier
+			  path: (identifier) @type)
+			 (#match? @type "^[A-Z]"))
+			((scoped_identifier
+			  path: (scoped_identifier
+				name: (identifier) @type))
+			 (#match? @type "^[A-Z]"))
+			((scoped_type_identifier
+			  path: (identifier) @type)
+			 (#match? @type "^[A-Z]"))
+			((scoped_type_identifier
+			  path: (scoped_identifier
+				name: (identifier) @type))
+			 (#match? @type "^[A-Z]"))
+			(struct_pattern
+			  type: (scoped_type_identifier
+				name: (type_identifier) @constructor))
+			(call_expression
+			  function: (identifier) @function.call)
+			(call_expression
+			  function: (field_expression
+				field: (field_identifier) @function.call))
+			(call_expression
+			  function: (scoped_identifier
+				"::"
+				name: (identifier) @function.call))
+			(generic_function
+			  function: (identifier) @function.call)
+			(generic_function
+			  function: (scoped_identifier
+				name: (identifier) @function.call))
+			(generic_function
+			  function: (field_expression
+				field: (field_identifier) @function.call))
+			(macro_invocation
+			  macro: (identifier) @function.macro
+			  "!" @function.macro)
+			(function_item (identifier) @function)
+			(function_signature_item (identifier) @function)
+			(line_comment) @comment
+			(block_comment) @comment
+			(line_comment (doc_comment)) @comment.documentation
+			(block_comment (doc_comment)) @comment.documentation
+			"(" @punctuation.bracket
+			")" @punctuation.bracket
+			"[" @punctuation.bracket
+			"]" @punctuation.bracket
+			"{" @punctuation.bracket
+			"}" @punctuation.bracket
+			(type_arguments
+			  "<" @punctuation.bracket
+			  ">" @punctuation.bracket)
+			(type_parameters
+			  "<" @punctuation.bracket
+			  ">" @punctuation.bracket)
+			"::" @punctuation.delimiter
+			":" @punctuation.delimiter
+			"." @punctuation.delimiter
+			"," @punctuation.delimiter
+			";" @punctuation.delimiter
+			(parameter (identifier) @variable.parameter)
+			(lifetime (identifier) @label)
+			[
+			  "as" "async" "await" "break" "const" "continue" "default"
+			  "dyn" "else" "enum" "extern" "fn" "for" "gen" "if" "impl"
+			  "in" "let" "loop" "macro_rules!" "match" "mod" "move" "pub"
+			  "raw" "ref" "return" "static" "struct" "trait" "type"
+			  "union" "unsafe" "use" "where" "while" "yield"
+			] @keyword
+			(crate) @keyword
+			(mutable_specifier) @keyword
+			(use_list (self) @keyword)
+			(scoped_use_list (self) @keyword)
+			(scoped_identifier (self) @keyword)
+			(super) @keyword
+			(self) @variable.builtin
+			(char_literal) @string
+			(string_literal) @string
+			(raw_string_literal) @string
+			(boolean_literal) @constant.builtin
+			(integer_literal) @constant.builtin
+			(float_literal) @constant.builtin
+			(escape_sequence) @escape
+			(attribute_item) @attribute
+			(inner_attribute_item) @attribute
+			[
+			  "+" "-" "*" "/" "%" "=" "==" "!=" "<" ">" "<=" ">="
+			  "&&" "||" "!" "&" "|" "^" "<<" ">>"
+			  "+=" "-=" "*=" "/=" "%=" "&=" "|=" "^=" "<<=" ">>="
+			  "->" ".." "..."
+			] @operator
+			"*" @operator
+			"&" @operator
+			"'" @operator
+		]]
+		vim.treesitter.query.set("rust", "highlights", query_string)
+		pcall(vim.treesitter.start, args.buf, "rust")
+	end
+})
+
+
 -- Auto-pairs
 PairsV = vim.api.nvim_create_augroup("Pairs", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
@@ -1147,6 +1286,28 @@ Servers = {
 		lsp_cmd = { "pyright-langserver", "--stdio" },
 		filetypes = { "python" },
 		root_markers = { "pyproject.toml", "setup.py", ".git" }
+	},
+	rust = {
+		name = "rust-analyzer",
+		cmd_name = "rust-analyzer",
+		check = function()
+			return vim.fn.executable(BinDir.."/rust-analyzer_dist/rust-analyzer") == 1
+		end,
+		install_cmd = table.concat({
+			"rm -rf '"..BinDir.."/rust-analyzer_dist' '"..BinDir.."/rust-analyzer_tmp.gz' && ",
+			"mkdir -p '"..BinDir.."/rust-analyzer_dist' && ",
+			"URL=$(curl -s https://api.github.com/repos/rust-lang/rust-analyzer/releases/latest ",
+			"| grep -o '\"browser_download_url\": *\"[^\"]*rust-analyzer-x86_64-unknown-linux-gnu\\.gz\"' ",
+			"| grep -o 'https://[^\"]*') && ",
+			"echo \"Resolved URL: $URL\" && ",
+			"curl -L -o '"..BinDir.."/rust-analyzer_tmp.gz' \"$URL\" && ",
+			"gunzip -c '"..BinDir.."/rust-analyzer_tmp.gz' > '"..BinDir.."/rust-analyzer_dist/rust-analyzer' && ",
+			"chmod +x '"..BinDir.."/rust-analyzer_dist/rust-analyzer' && ",
+			"rm -f '"..BinDir.."/rust-analyzer_tmp.gz'",
+		}),
+		lsp_cmd = { BinDir.."/rust-analyzer_dist/rust-analyzer" },
+		filetypes = { "rust" },
+		root_markers = { "Cargo.toml", ".git" }
 	},
 	c = {
 		name = "clangd",
@@ -1229,7 +1390,7 @@ function BootstrapAndStart(server, bufnr)
 end
 vim.api.nvim_create_autocmd("FileType", {
 	group = LSPBootstrapV,
-	pattern = { "python", "c", "cpp", "lua" },
+	pattern = { "python", "c", "cpp", "lua", "rust" },
 	callback = function(args)
 		local ft = vim.bo[args.buf].filetype
 		local key = (ft == "cpp") and "c" or ft
@@ -1325,8 +1486,10 @@ function StatusLineRender()
 		jpg        = "󰸭", jpeg       = "󰸭", gif        = "󰵸", svg        = "󰜡",
 		lock       = "󰌾", default    = "󰈚",
 	}
+	local mode_icons = { n  = "", i  = "", v  = "󰈈", V  = "󰈈", ["\22"] = "󰈈",
+	  c  = "", r  = "󰑕", R  = "󰑕", t  = ""}
 	local m = vim.api.nvim_get_mode().mode
-	local mode_comp = string.format("%%#%s#  ⟮%s⟯ %%*", mode_hl[m] or "MyStlNormal", mode_names[m] or m)..string.format("%%#%s#⚛  %%*", mode_hl[m] or "MyStlNormal")
+	local mode_comp = string.format("%%#%s#  %s %%*", mode_hl[m] or "MyStlNormal", mode_names[m] or m)..string.format("%%#%s#%s  %%*", mode_hl[m] or "MyStlNormal", mode_icons[m])
 	local name = vim.fn.expand("%:t")
 	if name == "" then name = "[No Name]" end
 	local file_comp = vim.bo.modified and (name.." [+]") or name
