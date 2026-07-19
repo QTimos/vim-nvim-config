@@ -1412,8 +1412,6 @@ vim.api.nvim_create_autocmd("LspAttach", {
 		end
 	end,
 })
-pcall(vim.keymap.del, "i", "<C-n>", { silent = true })
-pcall(vim.keymap.del, "i", "<S-n>", { silent = true })
 vim.keymap.set("i", "<C-n>", function()
 	vim.lsp.completion.get()
 end)
@@ -1450,6 +1448,7 @@ function StatusLineSetup()
 	hl(0, "MyStlVisual", { bg = colors.pink, fg = colors.bg, italic = true })
 	hl(0, "MyStlCommand", { bg = colors.red, fg = colors.bg, bold = true })
 	hl(0, "MyStlReplace", { bg = colors.magenta, fg = colors.bg, bold = true })
+	hl(0, "MyStlICompletion", { bg = colors.green, fg = colors.bg, bold = true })
 	hl(0, "MyStlTerminal", { bg = colors.fg_dark, fg = colors.bg, bold = true, italic = true })
 	hl(0, "MyStlFileType", { bg = colors.pink, fg = colors.bg, bold = true, italic = true })
 	hl(0, "MyStlFileLines", { bg = colors.bg_alt, fg = colors.red, bold = true, italic = true })
@@ -1458,13 +1457,11 @@ function StatusLineSetup()
 end
 function StatusLineRender()
 	local mode_names = {
-	  n = "NORMAL", i = "INSERT", v = "VISUAL", V = "V-LINE",
-	  ["\22"] = "V-BLOCK", c = "COMMAND", R = "REPLACE", t = "TERMINAL",
-	}
+	  n = "NORMAL", i = "INSERT", v = "VISUAL", V = "V-LINE", ic = "I-COMPLETION",
+	  ["\22"] = "V-BLOCK", c = "COMMAND", R = "REPLACE", t = "TERMINAL" }
 	local mode_hl = {
-	  n = "MyStlNormal", i = "MyStlInsert", v = "MyStlVisual", V = "MyStlVisual",
-	  ["\22"] = "MyStlVisual", c = "MyStlCommand", R = "MyStlReplace", t = "MyStlTerminal",
-	}
+	  n = "MyStlNormal", i = "MyStlInsert", v = "MyStlVisual", V = "MyStlVisual", ic = "MyStlICompletion",
+	  ["\22"] = "MyStlVisual", c = "MyStlCommand", R = "MyStlReplace", t = "MyStlTerminal" }
 	local file_types = { lua        = "", vim        = "", python     = "",
 		py         = "", c          = "", h          = "", cpp        = "",
 		hpp        = "", cc         = "", cxx        = "", java       = "",
@@ -1484,18 +1481,16 @@ function StatusLineRender()
 		xz         = "󰗄", mp3        = "󰎆", wav        = "󰎆", flac       = "󰎆",
 		mp4        = "󰈫", mkv        = "󰈫", avi        = "󰈫", png        = "󰸭",
 		jpg        = "󰸭", jpeg       = "󰸭", gif        = "󰵸", svg        = "󰜡",
-		lock       = "󰌾", default    = "󰈚",
-	}
+		lock       = "󰌾", default    = "󰈚" }
 	local mode_icons = { n  = "", i  = "", v  = "󰈈", V  = "󰈈", ["\22"] = "󰈈",
-	  c  = "", r  = "󰑕", R  = "󰑕", t  = ""}
+	  c  = "", r  = "󰑕", R  = "󰑕", t  = "", ic = "" }
 	local m = vim.api.nvim_get_mode().mode
 	local mode_comp = string.format("%%#%s#  %s %%*", mode_hl[m] or "MyStlNormal", mode_names[m] or m)..string.format("%%#%s#%s  %%*", mode_hl[m] or "MyStlNormal", mode_icons[m])
 	local name = vim.fn.expand("%:t")
 	if name == "" then name = "[No Name]" end
 	local file_comp = vim.bo.modified and (name.." [+]") or name
 	local file_type = string.format("%%#%s#  %s %s  %%*", "MyStlFileType", file_types[vim.bo.filetype] or file_types.default, vim.bo.filetype)
-	local file_lines = string.format("%%#%s#  %s  %%*", "MyStlFileLines", vim.fn.line(".")..":"..vim.fn.col(".").." ")
-
+	local file_lines = string.format("%%#%s#  %s %%*", "MyStlFileLines", vim.fn.line(".")..":"..vim.fn.col(".").." ")
 	local focused = vim.g.statusline_winid == vim.api.nvim_get_current_win()
 	if not focused then
 		return "  " .. file_comp
@@ -1504,7 +1499,7 @@ function StatusLineRender()
 		mode_comp, " ", file_comp,
 		"%=",
 		file_type,
-		file_lines,
+		file_lines
 	})
 end
 
