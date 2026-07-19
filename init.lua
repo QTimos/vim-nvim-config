@@ -1242,7 +1242,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 PairsV = vim.api.nvim_create_augroup("Pairs", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
 	group = PairsV,
-	pattern = { "c", "python", "lua", "vim" },
+	pattern = { "c", "python", "lua", "vim", "rust" },
 	callback = function()
 		vim.keymap.set("i", "(", "()<Left>", { buffer = 0, silent = true })
 		vim.keymap.set("i", "[", "[]<Left>", { buffer = 0, silent = true })
