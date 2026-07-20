@@ -1,6 +1,5 @@
 vim9script
-syntax on
-filetype on
+syntax on filetype on
 filetype plugin indent on
 execute "set mouse=a"
 g:mapleader = ' '

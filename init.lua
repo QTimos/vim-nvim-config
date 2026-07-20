@@ -838,51 +838,73 @@ function CreateFloatingWindow(buf)
 	vim.wo[win].cursorline = true
 	return win
 end
-function ToggleTerminal()
-	local key = GetKey()
-	local entry = TermRegistry[key]
-	if entry and entry.win and vim.api.nvim_win_is_valid(entry.win) then
-		vim.api.nvim_win_close(entry.win, true)
-		entry.win = nil
-		return
-	end
-	for k, e in pairs(TermRegistry) do
-		if k ~= key and e.win and vim.api.nvim_win_is_valid(e.win) then
-			vim.api.nvim_win_close(e.win, true)
-			e.win = nil
+function ToggleTerminal(cmd)
+	if cmd == nil then
+		local key = GetKey()
+		local entry = TermRegistry[key]
+		if entry and entry.win and vim.api.nvim_win_is_valid(entry.win) then
+			vim.api.nvim_win_close(entry.win, true)
+			entry.win = nil
+			return
 		end
-	end
-	if entry and entry.buf and vim.api.nvim_buf_is_valid(entry.buf) then
-		entry.win = CreateFloatingWindow(entry.buf)
-		vim.cmd("startinsert")
-		return
-	end
-	local cwd = vim.fn.expand("%:p:h")
-	if cwd == "" then
-		cwd = vim.fn.getcwd()
-	end
-	local buf = vim.api.nvim_create_buf(false, true)
-	vim.b[buf].source_buf = key
-	local win = CreateFloatingWindow(buf)
-	vim.fn.termopen(Config.shell or vim.o.shell, {
-		cwd = cwd,
-		on_exit = function()
-			if TermRegistry[key] and TermRegistry[key].win and vim.api.nvim_win_is_valid(TermRegistry[key].win) then
-				vim.api.nvim_win_close(TermRegistry[key].win, true)
+		for k, e in pairs(TermRegistry) do
+			if k ~= key and e.win and vim.api.nvim_win_is_valid(e.win) then
+				vim.api.nvim_win_close(e.win, true)
+				e.win = nil
 			end
-			TermRegistry[key] = nil
-		end,
-	})
-	vim.bo[buf].buflisted = false
-	vim.keymap.set({ "t", "n" }, Config.toggle_keymap, function()
-		ToggleTerminal()
-	end, { buffer = buf, noremap = true, silent = true })
-	vim.keymap.set({ "t", "n" }, Config.kill_keymap, function()
-		KillTerminal()
-	end, { buffer = buf, noremap = true, silent = true })
-	vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
-	TermRegistry[key] = { buf = buf, win = win }
-	vim.cmd("startinsert")
+		end
+		if entry and entry.buf and vim.api.nvim_buf_is_valid(entry.buf) then
+			entry.win = CreateFloatingWindow(entry.buf)
+			vim.cmd("startinsert")
+			return
+		end
+		local cwd = vim.fn.expand("%:p:h")
+		if cwd == "" then
+			cwd = vim.fn.getcwd()
+		end
+		local buf = vim.api.nvim_create_buf(false, true)
+		vim.b[buf].source_buf = key
+		local win = CreateFloatingWindow(buf)
+		vim.fn.jobstart(vim.o.shell, {
+			cwd = cwd,
+			term = true,
+			on_exit = function()
+				if TermRegistry[key] and TermRegistry[key].win and vim.api.nvim_win_is_valid(TermRegistry[key].win) then
+					vim.api.nvim_win_close(TermRegistry[key].win, true)
+				end
+				TermRegistry[key] = nil
+			end,
+		})
+		vim.bo[buf].buflisted = false
+		vim.keymap.set({ "t", "n" }, Config.toggle_keymap, function()
+			ToggleTerminal()
+		end, { buffer = buf, noremap = true, silent = true })
+		vim.keymap.set({ "t", "n" }, Config.kill_keymap, function()
+			KillTerminal()
+		end, { buffer = buf, noremap = true, silent = true })
+		vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
+		TermRegistry[key] = { buf = buf, win = win }
+		vim.cmd("startinsert")
+	else
+		local buf = vim.api.nvim_create_buf(false, true)
+		local win = CreateFloatingWindow(buf)
+		local cwd = vim.fn.expand("%:p:h")
+		if cwd == "" then
+			cwd = vim.fn.getcwd()
+		end
+		vim.fn.jobstart(cmd, {
+			cwd = cwd,
+			term = true,
+			on_exit = function()
+				if win and vim.api.nvim_win_is_valid(win) then
+					vim.api.nvim_win_close(win, true)
+				end
+			end,
+		})
+		vim.cmd("startinsert")
+		vim.keymap.set("n", "q", "<C-\\><C-n>:q!<CR>", { silent = true })
+		vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
+	end
 end
 function KillTerminal()
 	local key = GetKey()
@@ -1458,10 +1480,10 @@ end
 function StatusLineRender()
 	local mode_names = {
 	  n = "NORMAL", i = "INSERT", v = "VISUAL", V = "V-LINE", ic = "I-COMPLETION",
-	  ["\22"] = "V-BLOCK", c = "COMMAND", R = "REPLACE", t = "TERMINAL" }
+	  ["\22"] = "V-BLOCK", c = "COMMAND", R = "REPLACE", t = "TERMINAL" , nt = "N-TERMINAL" }
 	local mode_hl = {
 	  n = "MyStlNormal", i = "MyStlInsert", v = "MyStlVisual", V = "MyStlVisual", ic = "MyStlICompletion",
-	  ["\22"] = "MyStlVisual", c = "MyStlCommand", R = "MyStlReplace", t = "MyStlTerminal" }
+	  ["\22"] = "MyStlVisual", c = "MyStlCommand", R = "MyStlReplace", t = "MyStlTerminal", nt = "MyStlTerminal" }
 	local file_types = { lua        = "", vim        = "", python     = "",
 		py         = "", c          = "", h          = "", cpp        = "",
 		hpp        = "", cc         = "", cxx        = "", java       = "",
@@ -1483,7 +1505,7 @@ function StatusLineRender()
 		jpg        = "󰸭", jpeg       = "󰸭", gif        = "󰵸", svg        = "󰜡",
 		lock       = "󰌾", default    = "󰈚" }
 	local mode_icons = { n  = "", i  = "", v  = "󰈈", V  = "󰈈", ["\22"] = "󰈈",
-	  c  = "", r  = "󰑕", R  = "󰑕", t  = "", ic = "" }
+	  c  = "", r  = "󰑕", R  = "󰑕", nt = "", t  = "", ic = "" }
 	local m = vim.api.nvim_get_mode().mode
 	local mode_comp = string.format("%%#%s#  %s %%*", mode_hl[m] or "MyStlNormal", mode_names[m] or m)..string.format("%%#%s#%s  %%*", mode_hl[m] or "MyStlNormal", mode_icons[m])
 	local name = vim.fn.expand("%:t")
@@ -1592,7 +1614,9 @@ CurAnimGI = vim.api.nvim_create_augroup("CurAnim", { clear = true })
 vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 	group = CurAnimGI,
 	pattern = "",
-	callback = CursorAnimate
+	callback = function()
+		CursorAnimate()
+	end
 })
 
 
@@ -1610,7 +1634,13 @@ vim.keymap.set("n", "<Leader>ft", function()
 end, { silent = true })
 vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
 vim.keymap.set("n", Config.toggle_keymap, function()
-	ToggleTerminal()
+	ToggleTerminal(nil)
+end, { noremap = true, silent = true })
+vim.keymap.set("n", "<Leader>man", function()
+	ToggleTerminal("man "..vim.fn.expand('<cword>'))
+end, { noremap = true, silent = true })
+vim.keymap.set("n", "<Leader>help", function()
+	ToggleTerminal("python3 -c \"help("..vim.fn.expand('<cword>')..")\"")
 end, { noremap = true, silent = true })
 vim.keymap.set("n", "<Leader>q", "<C-\\><C-n>:q!<CR>", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
