@@ -1615,7 +1615,7 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 	group = CurAnimGI,
 	pattern = "",
 	callback = function()
-		CursorAnimate()
+		-- CursorAnimate()
 	end
 })
 
@@ -1637,10 +1637,39 @@ vim.keymap.set("n", Config.toggle_keymap, function()
 	ToggleTerminal(nil)
 end, { noremap = true, silent = true })
 vim.keymap.set("n", "<Leader>man", function()
-	ToggleTerminal("man "..vim.fn.expand('<cword>'))
+	local cword = vim.fn.expand('<cword>')
+	if cword == "" then return end
+	vim.fn.jobstart("man -w "..cword, {
+		on_exit = function(_, exit_code)
+			if exit_code == 0 then
+				vim.schedule(function()
+					ToggleTerminal("man "..cword)
+				end)
+			else
+				vim.schedule(function()
+					vim.api.nvim_echo({{ "No manual entry for "..cword, "ErrorMsg" }}, true, {})
+				end)
+			end
+		end
+	})
 end, { noremap = true, silent = true })
 vim.keymap.set("n", "<Leader>help", function()
-	ToggleTerminal("python3 -c \"help("..vim.fn.expand('<cword>')..")\"")
+	local cword = vim.fn.expand('<cword>')
+	if cword == "" then return end
+	local check_cmd = string.format("python3 -c \"import pydoc; pydoc.render_doc('%s')\"", cword)
+	vim.fn.jobstart(check_cmd, {
+		on_exit = function(_, exit_code)
+			if exit_code == 0 then
+				vim.schedule(function()
+					ToggleTerminal("python3 -c \"help("..cword..")\"")
+				end)
+			else
+				vim.schedule(function()
+					vim.api.nvim_echo({{ "No Python help found for ".. cword, "ErrorMsg" }}, true, {})
+				end)
+			end
+		end
+	})
 end, { noremap = true, silent = true })
 vim.keymap.set("n", "<Leader>q", "<C-\\><C-n>:q!<CR>", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
