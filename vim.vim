@@ -218,6 +218,26 @@ def g:MidnightNexus()
 enddef
 
 # File skeletons
+def g:C_skeleton()
+	if &filetype != 'c'
+		echo "You are not in an C file!!"
+		return
+	endif
+	var lines = [
+		"#include <stdio.h>",
+		"#include <stdlib.h>",
+		"",
+		"",
+		"int main(int argc, char **argv)",
+		"{",
+		"	return (0);",
+		"}"
+	]
+	for ln in range(1, len(lines))
+		setline(ln, lines[ln - 1])
+	endfor
+enddef
+command! Cskell call g:C_skeleton()
 def g:PY_skeleton()
 	if &filetype != 'python'
 		echo "You are not in an python file!!"
@@ -237,7 +257,7 @@ def g:PY_skeleton()
 		setline(ln, lines[ln - 1])
 	endfor
 enddef
-command! PYSkell call g:PY_skeleton()
+command! PYskell call g:PY_skeleton()
 def g:CSS_skeleton()
 	if &filetype != 'css'
 		echo "You are not in an css file!!"
@@ -310,7 +330,7 @@ def g:CSS_skeleton()
 		setline(ln, lines[ln - 1])
 	endfor
 enddef
-command! CSSSkell call g:CSS_skeleton()
+command! CSSskell call g:CSS_skeleton()
 def g:HTML_skeleton()
 	if &filetype != 'html'
 		echo "You are not in an html file!!"
@@ -333,7 +353,7 @@ def g:HTML_skeleton()
 		setline(ln, lines[ln - 1])
 	endfor
 enddef
-command! HTMLSkell call g:HTML_skeleton()
+command! HTMLskell call g:HTML_skeleton()
 
 
 # Helpers

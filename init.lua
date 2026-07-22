@@ -312,6 +312,26 @@ function MidnightNexus()
 end
 
 -- File skeletons
+function C_skeleton()
+	local bufnbr = vim.api.nvim_get_current_buf()
+	local filetype = vim.bo[bufnbr].filetype
+	if filetype ~= "c" then
+		print("You are not in a C file!!")
+		return
+	end
+	local lines = {
+		"#include <stdio.h>",
+		"#include <stdlib.h>",
+		"",
+		"",
+		"int main(int argc, char **argv)",
+		"{",
+		"	return (0);",
+		"}"
+	}
+	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
+end
+vim.api.nvim_create_user_command("Cskell", C_skeleton, {})
 function PY_skeleton()
 	local bufnbr = vim.api.nvim_get_current_buf()
 	local filetype = vim.bo[bufnbr].filetype
