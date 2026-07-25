@@ -28,6 +28,7 @@ vim.opt.list = true
 vim.opt.listchars = { tab = "»-", trail = "·", extends = "›", precedes = "‹" }
 
 -- Colorscheme- Midnight Nexus
+vim.highlight.priorities.semantic_tokens = 0
 function MidnightNexus()
 	local highlight = vim.api.nvim_set_hl
 	local colors = {
