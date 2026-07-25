@@ -1496,9 +1496,19 @@ function StatusLineSetup()
 	hl(0, "MyStlFileType", { bg = colors.pink, fg = colors.bg, bold = true, italic = true })
 	hl(0, "MyStlFileLines", { bg = colors.bg_alt, fg = colors.red, bold = true, italic = true })
 	vim.o.laststatus = 2
-	vim.o.statusline = "%!v:lua.StatusLineRender()"
 end
-function StatusLineRender()
+function StatusLineRender(flag)
+	if flag == 2 then
+		local name = vim.fn.expand("%:t")
+		local focused = vim.g.statusline_winid == vim.api.nvim_get_current_win()
+		if not focused then
+			return "  " .. name
+	end
+		local netrw_line = string.format("%%#%s# 󰙅 Netrw %%*", "MyStlReplace")
+		return table.concat({
+			netrw_line,
+		})
+	end
 	local mode_names = {
 	  n = "NORMAL", i = "INSERT", v = "VISUAL", V = "V-LINE", ic = "I-COMPLETION",
 	  ["\22"] = "V-BLOCK", c = "COMMAND", R = "REPLACE", t = "TERMINAL" , nt = "N-TERMINAL" }
@@ -1545,6 +1555,19 @@ function StatusLineRender()
 		file_lines
 	})
 end
+StatusLineGI = vim.api.nvim_create_augroup("StatusLine", { clear = true })
+vim.api.nvim_create_autocmd({"BufEnter"}, {
+	group = StatusLineGI,
+	pattern = {},
+	callback = function()
+		local file_type = vim.bo[0].filetype
+		if file_type == "netrw" then
+			vim.o.statusline = "%!v:lua.StatusLineRender(2)"
+		else
+			vim.o.statusline = "%!v:lua.StatusLineRender(1)"
+		end
+	end
+})
 
 
 -- Cursor animations
