@@ -1,5 +1,6 @@
 vim.g.mapleader = " "
 vim.g.localleader = " "
+vim.g.markdown_syntax_conceal = 1
 
 -- General settings
 vim.opt.modelines = 0
@@ -14,6 +15,7 @@ vim.opt.termguicolors = true
 vim.opt.showmode = true
 vim.opt.updatetime = 100
 vim.opt.timeoutlen = 300
+vim.opt.undofile = true
 
 -- Folds & indentation
 vim.opt.tabstop = 4
@@ -261,9 +263,15 @@ function MidnightNexus()
 	highlight(0, "markdownH4", { fg = colors.green, bold = true })
 	highlight(0, "markdownH5", { fg = colors.cyan, bold = true })
 	highlight(0, "markdownH6", { fg = colors.magenta, bold = true })
+	highlight(0, "markdownHeadingDelimiter", { fg = colors.grey })
+	highlight(0, "markdownBold", { fg = colors.orange, bold = true })
+	highlight(0, "markdownItalic", { fg = colors.yellow, italic = true })
 	highlight(0, "markdownCode", { fg = colors.green })
 	highlight(0, "markdownCodeBlock", { fg = colors.green })
+	highlight(0, "markdownLinkText", { fg = colors.blue, underline = true })
 	highlight(0, "markdownUrl", { fg = colors.blue, underline = true })
+	highlight(0, "markdownListMarker", { fg = colors.magenta })
+	highlight(0, "markdownBlockquote", { fg = colors.grey, italic = true })
 
 	-- Vim
 	highlight(0, "vimCommand", { fg = "#BB9AF7", bold = true })
@@ -505,6 +513,9 @@ function Get_file_update_time_string(file)
 		return ""
 	end
 	local handle = io.popen("stat --format=%y "..file)
+	if handle == nil then
+		return
+	end
 	local raw = handle:read("*a")
 	handle:close()
 	if raw == "" or raw == {} or raw == nil then
@@ -527,6 +538,9 @@ function Get_file_creation_time_string(file)
 		return ""
 	end
 	local handle = io.popen("stat --format=%w "..file)
+	if handle == nil then
+		return
+	end
 	local raw = handle:read("*a")
 	handle:close()
 	if raw == "" or raw == {} or raw == nil then
@@ -552,7 +566,7 @@ function Get_filename_line(file_name)
 	return "/*   "..name..spaces..":+:      :+:    :+:   */"
 end
 function Get_mail_line(user_name)
-	local name, spaces = unpack(Pad_username(user_name, 19))
+	local name, spaces = Pad_username(user_name, 19).unpack()
 	return "/*   By: "..name.." <marvin@42.fr>"..spaces.."+#+  +:+       +#+        */"
 end
 function Get_created_line(user_name, full_path)
@@ -560,7 +574,7 @@ function Get_created_line(user_name, full_path)
 	if time_str == "" then
 		return ""
 	end
-	local name, spaces = unpack(Pad_username(user_name, 9))
+	local name, spaces = Pad_username(user_name, 9).unpack()
 	return "/*   "..time_str..name..spaces.."#+#    #+#             */"
 end
 function Get_updated_line(user_name, full_path)
@@ -568,11 +582,14 @@ function Get_updated_line(user_name, full_path)
 	if time_str == "" then
 		return ""
 	end
-	local name, spaces = unpack(Pad_username(user_name, 8))
+	local name, spaces = Pad_username(user_name, 8).unpack()
 	return "/*   "..time_str..name..spaces.."###   ########.fr       */"
 end
 function Pattern_update()
 	local handle = io.popen("echo $USER")
+	if handle == nil then
+		return
+	end
 	local raw = handle:read("*a")
 	handle:close()
 	local user_name = (USER == "") and raw or USER
@@ -601,6 +618,9 @@ function Pattern_update()
 end
 function Forty_Two_pattern()
 	local handle = io.popen("echo $USER")
+	if handle == nil then
+		return
+	end
 	local raw = handle:read("*a")
 	handle:close()
 	local user_name = (USER == "") and raw or USER
@@ -817,6 +837,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 		vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
 		vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
 		vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
+		vim.o.statusline = "%!v:lua.StatusLineRender(2)"
 	end,
 })
 
@@ -903,7 +924,7 @@ function ToggleTerminal(cmd)
 		vim.keymap.set({ "t", "n" }, Config.kill_keymap, function()
 			KillTerminal()
 		end, { buffer = buf, noremap = true, silent = true })
-		vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
+		-- vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
 		TermRegistry[key] = { buf = buf, win = win }
 		vim.cmd("startinsert")
 	else
@@ -1281,6 +1302,103 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 
 
+-- Markdown syntax highlighting
+local MDSyntaxGI = vim.api.nvim_create_augroup("MDSyntax", { clear = true })
+vim.api.nvim_create_autocmd({"FileType"}, {
+	group = MDSyntaxGI,
+	pattern = "markdown",
+	callback = function(args)
+		vim.opt_local.textwidth = 100
+		vim.opt_local.wrap = true
+		vim.opt_local.linebreak = true
+		vim.opt_local.conceallevel = 2
+		vim.opt_local.concealcursor = "nc"
+		vim.opt_local.list = false
+		vim.opt_local.colorcolumn = ""
+		vim.opt_local.spelllang = "en"
+		local dir = vim.fn.stdpath("config")
+		local md_parser = dir.."/markdown.so"
+		local mdi_parser = dir.."/markdown_inline.so"
+		pcall(vim.treesitter.language.add, "markdown", { path = md_parser })
+		pcall(vim.treesitter.language.add, "markdown_inline", { path = mdi_parser })
+		if vim.fn.filereadable(md_parser) == 0 or vim.fn.filereadable(mdi_parser) == 0 then
+			print("[Bootstrap] Building tree-sitter-markdown directly in config folder...")
+			local clone_dir = dir.."/tmp_clone_md"
+			local compile_cmd = string.format(
+				"rm -rf '%s' && " ..
+				"git clone --depth=1 https://github.com/tree-sitter-grammars/tree-sitter-markdown.git '%s' && " ..
+				"cc -o '%s' -shared -fPIC -O2 '%s/tree-sitter-markdown/src/parser.c' '%s/tree-sitter-markdown/src/scanner.c' -I'%s/tree-sitter-markdown/src' && " ..
+				"cc -o '%s' -shared -fPIC -O2 '%s/tree-sitter-markdown-inline/src/parser.c' '%s/tree-sitter-markdown-inline/src/scanner.c' -I'%s/tree-sitter-markdown-inline/src' && " ..
+				"rm -rf '%s'",
+				clone_dir, clone_dir,
+				md_parser, clone_dir, clone_dir, clone_dir,
+				mdi_parser, clone_dir, clone_dir, clone_dir,
+				clone_dir
+			)
+			vim.fn.jobstart(compile_cmd, {
+				on_exit = function(_, exit_code)
+					if exit_code == 0 then
+						print("[Bootstrap] Markdown parsers successfully compiled! Reopen the file.")
+						pcall(vim.treesitter.language.add, "markdown", { path = md_parser })
+						pcall(vim.treesitter.language.add, "markdown_inline", { path = mdi_parser })
+						pcall(vim.treesitter.start, args.buf, "markdown")
+					else
+						print("[Bootstrap] Markdown parser build failed (exit "..exit_code..")")
+					end
+				end
+			})
+		end
+		vim.treesitter.query.set("markdown", "highlights", [[
+			(atx_heading (atx_h1_marker)) @markup.heading.1
+			(atx_heading (atx_h2_marker)) @markup.heading.2
+			(atx_heading (atx_h3_marker)) @markup.heading.3
+			(atx_heading (atx_h4_marker)) @markup.heading.4
+			(atx_heading (atx_h5_marker)) @markup.heading.5
+			(atx_heading (atx_h6_marker)) @markup.heading.6
+			(fenced_code_block) @markup.raw.block
+			(block_quote) @markup.quote
+			(thematic_break) @punctuation.special
+			(list_marker_minus) @punctuation.special
+			(list_marker_plus) @punctuation.special
+			(list_marker_star) @punctuation.special
+		]])
+		vim.treesitter.query.set("markdown", "injections", [[
+			[(inline) (pipe_table_cell)] @injection.content
+			(#set! injection.language "markdown_inline")
+		]])
+		vim.treesitter.query.set("markdown_inline", "highlights", [[
+			(strong_emphasis) @markup.strong
+			(emphasis) @markup.italic
+			(strikethrough) @markup.strikethrough
+			(code_span) @markup.raw
+			(link_text) @markup.link.label
+			(link_destination) @markup.link.url
+			(uri_autolink) @markup.link.url
+		]])
+		local highlight = vim.api.nvim_set_hl
+		local colors = {
+			red = "#F7768E", green = "#9ECE6A", yellow = "#E0AF68",
+			blue = "#7AA2F7", magenta = "#BB9AF7", cyan = "#7DCFFF",
+			orange = "#FFB86C", grey = "#3B4261", bg_alt = "#171B26",
+		}
+		highlight(0, "@markup.heading.1", { fg = colors.red,     bold = true })
+		highlight(0, "@markup.heading.2", { fg = colors.orange,  bold = true })
+		highlight(0, "@markup.heading.3", { fg = colors.yellow,  bold = true })
+		highlight(0, "@markup.heading.4", { fg = colors.green,   bold = true })
+		highlight(0, "@markup.heading.5", { fg = colors.cyan,    bold = true })
+		highlight(0, "@markup.heading.6", { fg = colors.magenta, bold = true })
+		highlight(0, "@markup.strong", { fg = colors.orange, bold = true })
+		highlight(0, "@markup.italic", { fg = colors.yellow, italic = true })
+		highlight(0, "@markup.raw", { fg = colors.green, bg = colors.bg_alt })
+		highlight(0, "@markup.raw.block", { fg = colors.green, bg = colors.bg_alt })
+		highlight(0, "@markup.quote", { fg = colors.grey, italic = true })
+		highlight(0, "@markup.link.label", { fg = colors.blue, underline = true })
+		highlight(0, "@markup.link.url", { fg = colors.grey })
+		pcall(vim.treesitter.start, args.buf, "markdown")
+	end
+})
+
+
 -- Auto-pairs
 PairsV = vim.api.nvim_create_augroup("Pairs", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
@@ -1479,6 +1597,7 @@ end, { expr = true })
 
 
 -- Status line theming
+vim.g.c_syntax_for_h = 1
 function StatusLineSetup()
 	local colors = { bg = "#0F111A", bg_alt = "#171B26", bg_dark = "#0A0C14",
 		fg = "#C0CAF5", fg_dark = "#A9B1D6", grey = "#3B4261", red = "#F7768E",
