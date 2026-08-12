@@ -733,33 +733,49 @@ end
 function Open_file_under_cursor()
 	local file_name = vim.fn.expand("<cfile>")
 	local directory = vim.b.netrw_curdir
-	local full_path = directory .. "/" .. file_name
-	if vim.fn.isdirectory(full_path) ~= 0 then
-		vim.cmd("Ex " .. vim.fn.fnameescape(full_path))
-		vim.cmd("cd " .. vim.fn.fnameescape(full_path))
+	if directory == nil or file_name == nil or file_name == "" then
 		return
 	end
-	vim.cmd("cd %:p:h")
-	vim.cmd("e " .. vim.fn.fnameescape(full_path))
-	vim.cmd("only")
+	local full_path = vim.fn.fnamemodify(directory .. "/" .. file_name, ":p")
+	local curdir_normalized = vim.fn.fnamemodify(directory, ":p")
+	if full_path == curdir_normalized then
+		return
+	end
+	if vim.fn.isdirectory(full_path) ~= 0 then
+		if netrw_cr_orig and netrw_cr_orig.callback then
+			netrw_cr_orig.callback()
+		elseif netrw_cr_orig and netrw_cr_orig.rhs then
+			vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
+		end
+		return
+	end
+	if netrw_cr_orig and netrw_cr_orig.callback then
+		netrw_cr_orig.callback()
+	elseif netrw_cr_orig and netrw_cr_orig.rhs then
+		vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
+	end
+	vim.cmd("silent only")
 end
 function Open_file_under_cursor_in_vsplit()
 	local file_name = vim.fn.expand("<cfile>")
 	local directory = vim.b.netrw_curdir
-	local full_path = directory .. "/" .. file_name
-	if vim.fn.isdirectory(full_path) ~= 0 then
-		vim.cmd("Ex " .. vim.fn.fnameescape(full_path))
-		vim.cmd("cd " .. vim.fn.fnameescape(full_path))
+	if directory == nil or file_name == nil or file_name == "" then
 		return
 	end
-	vim.cmd("wincmd l")
-	vim.cmd("vs " .. vim.fn.fnameescape(full_path))
-	local thisbuf = vim.fn.bufnr("%")
-	local lastwin = vim.fn.winnr("#")
-	local lastbuf = vim.fn.winbufnr(lastwin)
-	vim.cmd("buffer " .. lastbuf)
-	vim.cmd("wincmd l")
-	vim.cmd("buffer " .. thisbuf)
+	local full_path = vim.fn.fnamemodify(directory .. "/" .. file_name, ":p")
+	local curdir_normalized = vim.fn.fnamemodify(directory, ":p")
+	if full_path == curdir_normalized then
+		return
+	end
+	if vim.fn.isdirectory(full_path) ~= 0 then
+		if netrw_cr_orig and netrw_cr_orig.callback then
+			netrw_cr_orig.callback()
+		elseif netrw_cr_orig and netrw_cr_orig.rhs then
+			vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
+		end
+		return
+	end
+	vim.cmd("silent botright vsplit " .. vim.fn.fnameescape(full_path))
 end
 function Create_new_file_or_directory()
 	local f_name = vim.fn.input("\nInput the name of the file/directory (directories must end with a /): ", "", "file")
@@ -819,8 +835,8 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		vim.g.netrw_localrmdir = "rm -r"
 
 		vim.opt_local.colorcolumn = "0"
-		vim.opt_local.number = true
-		vim.opt_local.relativenumber = false
+		-- vim.opt_local.number = true
+		-- vim.opt_local.relativenumber = false
 
 		local opts = { buffer = 0, silent = true }
 		pcall(vim.keymap.del, "n", "<CR>", opts)
@@ -833,7 +849,6 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		pcall(vim.keymap.del, "n", "v", opts)
 
 		vim.keymap.set("n", "<CR>", Open_file_under_cursor_while_split, opts)
-
 		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor, opts)
 		vim.keymap.set("n", "<Leader>s<CR>", Open_file_under_cursor_in_vsplit, opts)
 		vim.keymap.set("n", "%", Create_new_file_or_directory, { buffer = 0, silent = true, nowait = true })
