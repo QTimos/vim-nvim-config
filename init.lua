@@ -705,17 +705,16 @@ function Open_file_tree()
 	end
 	vim.cmd("Lexplore")
 end
+function TurnOffBanner()
+  vim.g.netrw_banner = (vim.g.netrw_banner == 0) and 1 or 0
+  if vim.bo.filetype == 'netrw' then
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<C-l>', true, false, true), 'n', false)
+  end
+end
 function Open_file_under_cursor_while_split()
-	local file_name = vim.fn.expand("<cfile>")
-	local directory = vim.b.netrw_curdir
-	if directory == nil or file_name == nil or file_name == "" then
-		return
-	end
-	local full_path = vim.fn.fnamemodify(directory .. "/" .. file_name, ":p")
-	local curdir_normalized = vim.fn.fnamemodify(directory, ":p")
-	if full_path == curdir_normalized then
-		return
-	end
+	local base_dir = vim.b.netrw_curdir or vim.g.netrw_treetop
+	local cur_word = vim.fn.expand("<cfile>")
+	local full_path = base_dir.."/"..cur_word
 	if vim.fn.isdirectory(full_path) ~= 0 then
 		if netrw_cr_orig and netrw_cr_orig.callback then
 			netrw_cr_orig.callback()
@@ -724,10 +723,18 @@ function Open_file_under_cursor_while_split()
 		end
 		return
 	end
-	if netrw_cr_orig and netrw_cr_orig.callback then
-		netrw_cr_orig.callback()
-	elseif netrw_cr_orig and netrw_cr_orig.rhs then
-		vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
+	-- labubu
+	local netrw_win = vim.api.nvim_get_current_win()
+	local right_winnr = vim.fn.winnr('l')
+	if right_winnr ~= vim.fn.winnr() then
+		vim.cmd(right_winnr .. "wincmd w")
+		vim.cmd.edit(full_path)
+	else
+		ToggleNetrwBanner()
+		vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(full_path))
+		local total_width = vim.o.columns
+		local proportional_width = math.max(12, math.floor(total_width * 0.12))
+		vim.api.nvim_win_set_width(netrw_win, proportional_width)
 	end
 end
 function Open_file_under_cursor()
@@ -827,16 +834,12 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		if netrw_cr_orig == nil then
 			netrw_cr_orig = vim.fn.maparg("<CR>", "n", false, true)
 		end
-		vim.g.netrw_banner = 0
 		vim.g.netrw_liststyle = 3
 		vim.g.netrw_winsize = 10
 		vim.g.netrw_keepdir = 0
 		vim.g.netrw_browse_split = 4
 		vim.g.netrw_localrmdir = "rm -r"
-
 		vim.opt_local.colorcolumn = "0"
-		-- vim.opt_local.number = true
-		-- vim.opt_local.relativenumber = false
 
 		local opts = { buffer = 0, silent = true }
 		pcall(vim.keymap.del, "n", "<CR>", opts)
@@ -848,8 +851,8 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		pcall(vim.keymap.del, "n", "%", opts)
 		pcall(vim.keymap.del, "n", "v", opts)
 
-		vim.keymap.set("n", "<CR>", Open_file_under_cursor_while_split, opts)
-		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor, opts)
+		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor_while_split, opts)
+		vim.keymap.set("n", "<CR>", Open_file_under_cursor, opts)
 		vim.keymap.set("n", "<Leader>s<CR>", Open_file_under_cursor_in_vsplit, opts)
 		vim.keymap.set("n", "%", Create_new_file_or_directory, { buffer = 0, silent = true, nowait = true })
 		vim.keymap.set("n", "r", Rename_file_or_directory, opts)
