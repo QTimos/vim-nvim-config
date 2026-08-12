@@ -1,6 +1,8 @@
 vim.g.mapleader = " "
 vim.g.localleader = " "
 vim.g.markdown_syntax_conceal = 1
+vim.g.netrw_list_hide = '^\\.\\.\\=/\\=$,^\\..*'
+vim.g.netrw_hide = 1
 
 -- General settings
 vim.opt.modelines = 0
@@ -318,6 +320,13 @@ function MidnightNexus()
 	highlight(0, "Cursor", { fg = colors.bg, bg = colors.fg })
 	highlight(0, "lCursor", { fg = colors.bg, bg = colors.fg })
 	highlight(0, "TermCursor", { fg = colors.bg, bg = colors.green })
+
+	-- Netrw
+	highlight(0, "NetrwConnector", { fg = colors.blue })
+	highlight(0, "netrwDir", { fg = colors.cyan, bold = true })
+	highlight(0, "netrwExe", { fg = colors.red })
+	highlight(0, "netrwSymLink", { fg = colors.magenta, italic = true })
+	highlight(0, "netrwClassify", { fg = colors.grey })
 end
 
 -- File skeletons
@@ -681,7 +690,9 @@ vim.api.nvim_create_autocmd({"BufWritePre"}, {
 
 
 -- Netrw / file explorer
+vim.g.netrw_liststyle = 3
 local netrw_cr_orig = nil
+local netrw_refresh_orig = nil
 local function is_tree_open()
 	for i = 1, vim.fn.winnr("$") do
 		if vim.fn.getwinvar(i, "&filetype") == "netrw" then
@@ -690,10 +701,78 @@ local function is_tree_open()
 	end
 	return nil
 end
+local function TurnOffBanner(netrw_win)
+	vim.g.netrw_banner = 0
+	if vim.bo.filetype == 'netrw' then
+		vim.api.nvim_win_call(netrw_win, function()
+			vim.fn["netrw#Explore"](0, false, 0, "")
+		end)
+	end
+end
+local function Refresh_netrw(target_dir)
+	local tree_win = vim.api.nvim_get_current_win()
+	local root = target_dir or vim.w.netrw_treetop or vim.b.netrw_curdir
+	local saved_line = vim.api.nvim_win_get_cursor(tree_win)[1]
+	vim.fn["netrw#Explore"](0, false, 0, root)
+	if vim.api.nvim_win_is_valid(tree_win) then
+		vim.api.nvim_set_current_win(tree_win)
+		local last_line = vim.api.nvim_buf_line_count(0)
+		local target_line = math.min(saved_line, last_line)
+		vim.api.nvim_win_set_cursor(tree_win, { target_line, 0 })
+	end
+end
+function Toggle_hidden_files()
+	vim.g.netrw_hide = vim.g.netrw_hide == 1 and 0 or 1
+	Refresh_netrw()
+end
+local function Netrw_get_fullpath_under_cursor()
+	local base_dir = vim.w.netrw_treetop or vim.b.netrw_curdir
+	local depth_str = "| "
+	local function depth_and_name(line)
+		local depth = 0
+		local rest = line
+		while rest:sub(1, #depth_str) == depth_str do
+			depth = depth + 1
+			rest = rest:sub(#depth_str + 1)
+		end
+		rest = rest:gsub("%s*%-%->.*$", "")
+		rest = rest:gsub("[/@%*=|]%s*$", "")
+		return depth, rest
+	end
+	local cur_depth, name = depth_and_name(vim.fn.getline("."))
+	if name == ".." then
+		return vim.fn.fnamemodify(base_dir .. "/..", ":p")
+	end
+	if cur_depth == 0 then
+		return vim.fn.fnamemodify(base_dir, ":p")
+	end
+	local parts = { name }
+	local lnum = vim.fn.line(".")
+	local want_depth = cur_depth
+	while want_depth > 1 and lnum > 1 do
+		lnum = lnum - 1
+		local d, n = depth_and_name(vim.fn.getline(lnum))
+		if d < want_depth and d > 0 then
+			table.insert(parts, 1, n)
+			want_depth = d
+		end
+	end
+	return vim.fn.fnamemodify(base_dir .. "/" .. table.concat(parts, "/"), ":p")
+end
+function Enter_directory_under_cursor()
+	local target = Netrw_get_fullpath_under_cursor()
+	if vim.fn.isdirectory(target) == 0 then
+		return
+	end
+	local tree_win = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_call(tree_win, function()
+		vim.fn["netrw#SetTreetop"](1, target)
+	end)
+end
 function Open_file_tree()
 	vim.g.netrw_banner = 0
 	vim.g.netrw_liststyle = 3
-	vim.g.netrw_winsize = 12
+	vim.g.netrw_winsize = 15
 	vim.g.netrw_keepdir = 0
 	vim.g.netrw_browse_split = 4
 	vim.g.netrw_localrmdir = "rm -r"
@@ -705,46 +784,9 @@ function Open_file_tree()
 	end
 	vim.cmd("Lexplore")
 end
-function TurnOffBanner()
-  vim.g.netrw_banner = (vim.g.netrw_banner == 0) and 1 or 0
-  if vim.bo.filetype == 'netrw' then
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<C-l>', true, false, true), 'n', false)
-  end
-end
 function Open_file_under_cursor_while_split()
-	local base_dir = vim.b.netrw_curdir or vim.g.netrw_treetop
-	local cur_word = vim.fn.expand("<cfile>")
-	local full_path = base_dir.."/"..cur_word
-	if vim.fn.isdirectory(full_path) ~= 0 then
-		if netrw_cr_orig and netrw_cr_orig.callback then
-			netrw_cr_orig.callback()
-		elseif netrw_cr_orig and netrw_cr_orig.rhs then
-			vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
-		end
-		return
-	end
-	-- labubu
-	local netrw_win = vim.api.nvim_get_current_win()
-	local right_winnr = vim.fn.winnr('l')
-	if right_winnr ~= vim.fn.winnr() then
-		vim.cmd(right_winnr .. "wincmd w")
-		vim.cmd.edit(full_path)
-	else
-		ToggleNetrwBanner()
-		vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(full_path))
-		local total_width = vim.o.columns
-		local proportional_width = math.max(12, math.floor(total_width * 0.12))
-		vim.api.nvim_win_set_width(netrw_win, proportional_width)
-	end
-end
-function Open_file_under_cursor()
-	local file_name = vim.fn.expand("<cfile>")
-	local directory = vim.b.netrw_curdir
-	if directory == nil or file_name == nil or file_name == "" then
-		return
-	end
-	local full_path = vim.fn.fnamemodify(directory .. "/" .. file_name, ":p")
-	local curdir_normalized = vim.fn.fnamemodify(directory, ":p")
+	local full_path = Netrw_get_fullpath_under_cursor()
+	local curdir_normalized = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
 	if full_path == curdir_normalized then
 		return
 	end
@@ -756,21 +798,39 @@ function Open_file_under_cursor()
 		end
 		return
 	end
+	local netrw_win = vim.api.nvim_get_current_win()
+	local right_winnr = vim.fn.winnr('l')
+	if right_winnr ~= vim.fn.winnr() then
+		vim.cmd(right_winnr .. "wincmd w")
+		vim.cmd.edit(full_path)
+	else
+		TurnOffBanner(netrw_win)
+		vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(full_path))
+		local total_width = vim.o.columns
+		local proportional_width = math.max(15, math.floor(total_width * 0.15))
+		vim.api.nvim_win_set_width(netrw_win, proportional_width)
+	end
+end
+function Open_file_under_cursor()
+	local full_path = Netrw_get_fullpath_under_cursor()
+	local curdir_normalized = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
+	if full_path == curdir_normalized then
+		return
+	end
 	if netrw_cr_orig and netrw_cr_orig.callback then
 		netrw_cr_orig.callback()
 	elseif netrw_cr_orig and netrw_cr_orig.rhs then
 		vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
 	end
+	if vim.fn.isdirectory(full_path) == 1 then
+		Enter_directory_under_cursor()
+		return
+	end
 	vim.cmd("silent only")
 end
 function Open_file_under_cursor_in_vsplit()
-	local file_name = vim.fn.expand("<cfile>")
-	local directory = vim.b.netrw_curdir
-	if directory == nil or file_name == nil or file_name == "" then
-		return
-	end
-	local full_path = vim.fn.fnamemodify(directory .. "/" .. file_name, ":p")
-	local curdir_normalized = vim.fn.fnamemodify(directory, ":p")
+	local full_path = Netrw_get_fullpath_under_cursor()
+	local curdir_normalized = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
 	if full_path == curdir_normalized then
 		return
 	end
@@ -785,13 +845,21 @@ function Open_file_under_cursor_in_vsplit()
 	vim.cmd("silent botright vsplit " .. vim.fn.fnameescape(full_path))
 end
 function Create_new_file_or_directory()
+	vim.cmd("echohl Question")
 	local f_name = vim.fn.input("\nInput the name of the file/directory (directories must end with a /): ", "", "file")
+	vim.cmd("echohl None")
 	if f_name == nil or f_name == "" then
 		print("\nFile or Directory name must not be empty or contain only spaces!!")
 		return
 	end
-	local directory = vim.b.netrw_curdir
-	local full_path = directory .. "/" .. f_name
+	local directory
+	if vim.fn.line(".") == 1 then
+		directory = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
+	else
+		local target = Netrw_get_fullpath_under_cursor()
+		directory = vim.fn.isdirectory(target) ~= 0 and target or vim.fn.fnamemodify(target, ":h")
+	end
+	local full_path = directory..f_name
 	if vim.fn.filereadable(full_path) ~= 0 or vim.fn.isdirectory(full_path) ~= 0 then
 		print("\nFile or Directory already exists!!")
 		return
@@ -801,29 +869,48 @@ function Create_new_file_or_directory()
 	else
 		io.open(full_path, "w"):close()
 	end
-	vim.cmd("Ex")
+	Refresh_netrw(directory)
+end
+function Delete_file_or_directory(path)
+	if vim.fn.isdirectory(path) ~= 0 then
+		vim.fn.delete(path, "rf")
+	else
+		vim.fn.delete(path)
+	end
+end
+function Delete_selected()
+	local start_line = vim.fn.line("v")
+	local end_line = vim.fn.line(".")
+	if start_line > end_line then start_line, end_line = end_line, start_line end
+	local paths = {}
+	local dirs_to_refresh = {}
+	for lnum = start_line, end_line do
+		vim.fn.cursor(lnum, 1)
+		local p = Netrw_get_fullpath_under_cursor()
+		table.insert(paths, p)
+		dirs_to_refresh[vim.fn.fnamemodify(p, ":h")] = true
+	end
+	vim.cmd("echohl Question")
+	local confirm = vim.fn.input(("Delete %d item(s)? (y/n): "):format(#paths))
+	vim.cmd("echohl None")
+	if confirm ~= "y" then return end
+	for _, p in ipairs(paths) do
+		Delete_file_or_directory(p)
+	end
+	for dir, _ in pairs(dirs_to_refresh) do
+		Refresh_netrw(dir)
+	end
 end
 function Rename_file_or_directory()
 	local old_name = vim.fn.expand("<cfile>")
 	local directory = vim.b.netrw_curdir
 	local old_path = directory .. "/" .. old_name
+	vim.cmd("echohl Question")
 	local new_name = vim.fn.input("Rename to: ", old_name, "file")
+	vim.cmd("echohl None")
 	if new_name == nil or new_name == "" or new_name == old_name then return end
 	local new_path = directory .. "/" .. new_name
 	os.rename(old_path, new_path)
-	vim.cmd("Ex")
-end
-function Delete_file_or_directory()
-	local name = vim.fn.expand("<cfile>")
-	local directory = vim.b.netrw_curdir
-	local full_path = directory .. "/" .. name
-	local confirm = vim.fn.confirm("Delete " .. name .. "?", "&Yes\n&No", 2)
-	if confirm ~= 1 then return end
-	if vim.fn.isdirectory(full_path) ~= 0 then
-		vim.fn.delete(full_path, "rf")
-	else
-		vim.fn.delete(full_path)
-	end
 	vim.cmd("Ex")
 end
 NetrwMapsGI = vim.api.nvim_create_augroup("NetrwMaps", { clear = true })
@@ -834,13 +921,16 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		if netrw_cr_orig == nil then
 			netrw_cr_orig = vim.fn.maparg("<CR>", "n", false, true)
 		end
+		if netrw_refresh_orig == nil then
+			netrw_refresh_orig = vim.fn.maparg("<C-l>", "n", false, true)
+		end
+		vim.api.nvim_set_hl(0, "Question", { fg = "#BB9AF7", bold = true })
 		vim.g.netrw_liststyle = 3
 		vim.g.netrw_winsize = 10
 		vim.g.netrw_keepdir = 0
 		vim.g.netrw_browse_split = 4
 		vim.g.netrw_localrmdir = "rm -r"
 		vim.opt_local.colorcolumn = "0"
-
 		local opts = { buffer = 0, silent = true }
 		pcall(vim.keymap.del, "n", "<CR>", opts)
 		pcall(vim.keymap.del, "n", "<Space>", opts)
@@ -849,25 +939,37 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		pcall(vim.keymap.del, "n", "<C-k>", opts)
 		pcall(vim.keymap.del, "n", "<C-j>", opts)
 		pcall(vim.keymap.del, "n", "%", opts)
+		pcall(vim.keymap.del, "n", "o", opts)
+		pcall(vim.keymap.del, "n", "d", opts)
+		pcall(vim.keymap.del, "n", "D", opts)
+		pcall(vim.keymap.del, "n", "R", opts)
 		pcall(vim.keymap.del, "n", "v", opts)
-
-		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor_while_split, opts)
-		vim.keymap.set("n", "<CR>", Open_file_under_cursor, opts)
+		pcall(vim.keymap.del, "n", "i", opts)
+		pcall(vim.keymap.del, "n", "I", opts)
+		vim.keymap.set("n", "<CR>", Open_file_under_cursor_while_split, opts)
+		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor, opts)
 		vim.keymap.set("n", "<Leader>s<CR>", Open_file_under_cursor_in_vsplit, opts)
 		vim.keymap.set("n", "%", Create_new_file_or_directory, { buffer = 0, silent = true, nowait = true })
 		vim.keymap.set("n", "r", Rename_file_or_directory, opts)
-		vim.keymap.set("n", "d", Delete_file_or_directory, opts)
 		vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
 		vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
 		vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
 		vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
-
+		vim.keymap.set("n", "i", Toggle_hidden_files, { silent = true })
+		vim.keymap.set("n", "d", function()
+			local path = Netrw_get_fullpath_under_cursor()
+				vim.cmd("echohl Question")
+				local confirm = vim.fn.input(("Delete %s? (y/n): "):format(vim.fn.fnamemodify(path, ":t")))
+				vim.cmd("echohl None")
+				if confirm == "y" then
+					Delete_file_or_directory(path)
+					Refresh_netrw(vim.fn.fnamemodify(path, ":h"))
+				end
+		end, opts)
+		vim.keymap.set("v", "d", Delete_selected, opts)
 		vim.o.statusline = "%!v:lua.StatusLineRender(2)"
 	end,
 })
-
-
-
 function CdToCurrentFile()
 	if vim.bo.buftype ~= "" then return end
 	local file_name = vim.fn.expand("%:p")
@@ -880,79 +982,6 @@ vim.api.nvim_create_autocmd({ "BufEnter" }, {
 	pattern = "*",
 	callback = CdToCurrentFile,
 })
-vim.keymap.set("n", "<Leader>ft", Open_file_tree, { silent = true })
--- Netrw / file explorer
--- function Open_file_tree()
--- 	local buftypes = {}
--- 	for i = 1, vim.fn.winnr("$") do
--- 		table.insert(buftypes, vim.fn.getwinvar(i, "&filetype"))
--- 	end
--- 	local tree_is_open = table_index(buftypes, "netrw")
--- 	if tree_is_open ~= nil then
--- 		print("You already have an Explorer instance opened!!!")
--- 	return
--- 	end
--- 	vim.g.netrw_banner = 0
--- 	vim.g.netrw_liststyle = 3
--- 	vim.g.netrw_winsize = 8
--- 	vim.g.netrw_keepdir = 0
--- 	vim.g.netrw_browse_split = 4
--- 	vim.cmd("Lexplore")
--- end
--- NetrwMapsGI = vim.api.nvim_create_augroup("NetrwMaps", { clear = true })
--- vim.api.nvim_create_autocmd({"FileType"}, {
--- 	group = NetrwMapsGI,
--- 	pattern = "netrw",
--- 	callback = function()
--- 		vim.opt.colorcolumn = "0"
--- 		pcall(vim.keymap.del, "n", "<CR>", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "<Space>", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "<C-l>", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "<C-h>", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "<C-k>", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "<C-j>", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "%", { buffer = 0, silent = true })
--- 		pcall(vim.keymap.del, "n", "v", { buffer = 0, silent = true })
--- 		vim.keymap.set("n", "<Leader><CR>", function()
--- 			Open_file_under_cursor()
--- 		end, { buffer = 0, silent = true })
--- 		vim.keymap.set("n", "<CR>", function()
--- 			Open_file_under_cursor_while_split()
--- 		end, { buffer = 0, silent = true })
--- 		vim.keymap.set("n", "<Leader>s<CR>", function()
--- 			Open_file_under_cursor_in_vsplit()
--- 		end, { buffer = 0, silent = true })
--- 		vim.keymap.set("n", "%", function()
--- 			Create_new_file_or_directory()
--- 		end, { buffer = 0, silent = true, nowait = true })
--- 		vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
--- 		vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
--- 		vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
--- 		vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
--- 		vim.o.statusline = "%!v:lua.StatusLineRender(2)"
--- 	end,
--- })
--- vim.keymap.set("n", "<Leader>ft", function()
--- 	Open_file_tree()
--- end, { silent = true })
---
--- function CdToCurrentFile()
--- 	local file_name = vim.fn.expand("%")
--- 	local directory = vim.b.netrw_curdir
--- 	if directory == nil then return end
--- 	local full_path = directory.."/"..file_name
--- 	if vim.bo.buftype ~= "" then return end
--- 	if vim.fn.filereadable(full_path) ~= 0 then return end
--- 	vim.fn.execute("cd %:p:h")
--- end
--- CdToFileGI = vim.api.nvim_create_augroup("CdToFile", { clear = true })
--- vim.api.nvim_create_autocmd({"BufEnter"}, {
--- 	group = CdToFileGI,
--- 	pattern = "*",
--- 	callback = function()
--- 		CdToCurrentFile()
--- 	end
--- })
 
 
 -- Terminal
@@ -1604,6 +1633,85 @@ vim.api.nvim_create_autocmd({ "TextChanged", "InsertLeave" }, {
 })
 
 
+-- Netrw syntax highlighting
+local netrw_ns = vim.api.nvim_create_namespace("netrw_connectors")
+local function get_netrw_lines(buf)
+	return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+end
+local function depth_of(line)
+	local depth = 0
+	local rest = line
+	while rest:sub(1, 2) == "| " do
+		depth = depth + 1
+		rest = rest:sub(3)
+	end
+	return depth
+end
+local function render_netrw_connectors(buf)
+	if not vim.api.nvim_buf_is_valid(buf) then return end
+	if vim.bo[buf].filetype ~= "netrw" then return end
+	vim.api.nvim_buf_clear_namespace(buf, netrw_ns, 0, -1)
+	local lines = get_netrw_lines(buf)
+	local depths = {}
+	for i, line in ipairs(lines) do
+		depths[i] = depth_of(line)
+	end
+	for i, _ in ipairs(lines) do
+		local d = depths[i]
+		if d > 0 then
+			local is_last = true
+			for j = i + 1, #lines do
+				if depths[j] < d then break end
+				if depths[j] == d then
+					is_last = false
+					break
+				end
+			end
+			local prefix_parts = {}
+			for k = 1, d - 1 do
+				local has_more = false
+				for j = i + 1, #lines do
+					if depths[j] < k then break end
+					if depths[j] == k then
+						has_more = true
+						break
+					end
+				end
+				table.insert(prefix_parts, has_more and "│ " or "  ")
+			end
+			table.insert(prefix_parts, is_last and "╰▸ " or "├▸ ")
+			local connector = table.concat(prefix_parts)
+			vim.api.nvim_buf_set_extmark(buf, netrw_ns, i - 1, 0, {
+				end_col = d * 2,
+				conceal = "",
+				virt_text = { { connector, "NetrwConnector" } },
+				virt_text_pos = "inline",
+			})
+		end
+	end
+end
+local NetrwSyntaxGI = vim.api.nvim_create_augroup("NetrwSyntax", { clear = true })
+vim.api.nvim_create_autocmd({ "FileType" }, {
+	group = NetrwSyntaxGI,
+	pattern = "netrw",
+	callback = function(args)
+		vim.opt_local.conceallevel = 2
+		vim.opt_local.concealcursor = "nc"
+		render_netrw_connectors(args.buf)
+	end,
+})
+vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+	group = NetrwSyntaxGI,
+	callback = function()
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
+				render_netrw_connectors(buf)
+			end
+		end
+	end,
+})
+
+
 -- Auto-pairs
 PairsV = vim.api.nvim_create_augroup("Pairs", { clear = true })
 vim.api.nvim_create_autocmd({"FileType"}, {
@@ -1999,18 +2107,24 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 })
 
 
+-- Search highlight
+vim.opt.hlsearch = false
+function Toggle_hlsearch()
+	vim.opt.hlsearch = not vim.opt.hlsearch:get()
+end
+
+
 -- Keymaps
 vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
 vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
 vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
 vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
+vim.keymap.set("n", "<Leader>h", Toggle_hlsearch, { silent = true })
 vim.keymap.set("n", "<Leader>n", ":next<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>p", ":prev<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>bf", ":let g:netrw_banner = 1<CR>:Ex<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>sc", ":so ~/.config/nvim/init.lua <CR>", { silent = true })
--- vim.keymap.set("n", "<Leader>ft", function()
--- 	Open_file_tree()
--- end, { silent = true })
+vim.keymap.set("n", "<Leader>ft", Open_file_tree, { silent = true })
 vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
 vim.keymap.set("n", Config.toggle_keymap, function()
 	ToggleTerminal(nil)
