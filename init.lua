@@ -3,6 +3,8 @@ vim.g.localleader = " "
 vim.g.markdown_syntax_conceal = 1
 vim.g.netrw_list_hide = '^\\.\\.\\=/\\=$,^\\..*'
 vim.g.netrw_hide = 0
+vim.g.netrw_sizestyle = "b"
+vim.g.netrw_timefmt = "%Y-%m-%d %H:%M:%S"
 
 -- General settings
 vim.opt.modelines = 0
@@ -575,7 +577,7 @@ function Get_filename_line(file_name)
 	return "/*   "..name..spaces..":+:      :+:    :+:   */"
 end
 function Get_mail_line(user_name)
-	local name, spaces = Pad_username(user_name, 19).unpack()
+	local name, spaces = unpack(Pad_username(user_name, 19))  ---@diagnostic disable-line: deprecated
 	return "/*   By: "..name.." <marvin@42.fr>"..spaces.."+#+  +:+       +#+        */"
 end
 function Get_created_line(user_name, full_path)
@@ -583,7 +585,7 @@ function Get_created_line(user_name, full_path)
 	if time_str == "" then
 		return ""
 	end
-	local name, spaces = Pad_username(user_name, 9).unpack()
+	local name, spaces = unpack(Pad_username(user_name, 9))  ---@diagnostic disable-line: deprecated
 	return "/*   "..time_str..name..spaces.."#+#    #+#             */"
 end
 function Get_updated_line(user_name, full_path)
@@ -591,7 +593,7 @@ function Get_updated_line(user_name, full_path)
 	if time_str == "" then
 		return ""
 	end
-	local name, spaces = Pad_username(user_name, 8).unpack()
+	local name, spaces = unpack(Pad_username(user_name, 8))  ---@diagnostic disable-line: deprecated
 	return "/*   "..time_str..name..spaces.."###   ########.fr       */"
 end
 function Pattern_update()
@@ -725,29 +727,32 @@ function Toggle_hidden_files()
 	vim.g.netrw_hide = vim.g.netrw_hide == 1 and 0 or 1
 	Refresh_netrw()
 end
-local function Netrw_get_fullpath_under_cursor()
+local function Netrw_get_fullpath_under_cursor(target_lnum)
 	local base_dir = vim.w.netrw_treetop or vim.b.netrw_curdir
+	if not base_dir then return nil end
 	local depth_str = "| "
 	local function depth_and_name(line)
-		local depth = 0
+		local d = 0
 		local rest = line
 		while rest:sub(1, #depth_str) == depth_str do
-			depth = depth + 1
+			d = d + 1
 			rest = rest:sub(#depth_str + 1)
 		end
+		rest = rest:gsub("^%d+/?%s*", "")
 		rest = rest:gsub("%s*%-%->.*$", "")
 		rest = rest:gsub("[/@%*=|]%s*$", "")
-		return depth, rest
+		return d, rest
 	end
-	local cur_depth, name = depth_and_name(vim.fn.getline("."))
+	local lnum = target_lnum or vim.fn.line(".")
+	local line_str = vim.fn.getline(lnum)
+	local cur_depth, name = depth_and_name(line_str)
 	if name == ".." then
 		return vim.fn.fnamemodify(base_dir .. "/..", ":p")
 	end
-	if cur_depth == 0 then
+	if name == "" or cur_depth == 0 then
 		return vim.fn.fnamemodify(base_dir, ":p")
 	end
 	local parts = { name }
-	local lnum = vim.fn.line(".")
 	local want_depth = cur_depth
 	while want_depth > 1 and lnum > 1 do
 		lnum = lnum - 1
@@ -775,6 +780,7 @@ function Open_file_tree()
 	vim.g.netrw_winsize = 15
 	vim.g.netrw_keepdir = 0
 	vim.g.netrw_browse_split = 4
+	vim.g.netrw_sort_by = "name"
 	vim.g.netrw_localrmdir = "rm -r"
 	vim.opt_local.colorcolumn = "0"
 	local win = is_tree_open()
@@ -903,6 +909,7 @@ function Delete_selected()
 end
 function Rename_file_or_directory()
 	local old_path = Netrw_get_fullpath_under_cursor()
+	if old_path == nil then return end
 	local old_name = vim.fn.fnamemodify(old_path, ":t")
 	local directory = vim.fn.fnamemodify(old_path, ":h")
 	vim.cmd("echohl Question")
@@ -946,16 +953,30 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 		pcall(vim.keymap.del, "n", "v", opts)
 		pcall(vim.keymap.del, "n", "i", opts)
 		pcall(vim.keymap.del, "n", "I", opts)
+		pcall(vim.keymap.del, "n", "s", opts)
+		vim.keymap.set("n", "s", function()
+			local sort_modes = {
+				name  = "time",
+				time  = "size",
+				size  = "exten",
+				exten = "name",
+			}
+			local current = vim.b.netrw_sort_by or vim.g.netrw_sort_by or "name"
+			local next_mode = sort_modes[current] or "name"
+			vim.g.netrw_sort_by = next_mode
+			vim.b.netrw_sort_by = next_mode
+			Refresh_netrw()
+		end, opts)
 		vim.keymap.set("n", "<CR>", Open_file_under_cursor_while_split, opts)
 		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor, opts)
 		vim.keymap.set("n", "<Leader>s<CR>", Open_file_under_cursor_in_vsplit, opts)
 		vim.keymap.set("n", "%", Create_new_file_or_directory, { buffer = 0, silent = true, nowait = true })
 		vim.keymap.set("n", "r", Rename_file_or_directory, opts)
-		vim.keymap.set("n", "<C-l>", "<C-w>l", { silent = true })
-		vim.keymap.set("n", "<C-h>", "<C-w>h", { silent = true })
-		vim.keymap.set("n", "<C-k>", "<C-w>k", { silent = true })
-		vim.keymap.set("n", "<C-j>", "<C-w>j", { silent = true })
-		vim.keymap.set("n", "i", Toggle_hidden_files, { silent = true })
+		vim.keymap.set("n", "<C-l>", "<C-w>l", opts)
+		vim.keymap.set("n", "<C-h>", "<C-w>h", opts)
+		vim.keymap.set("n", "<C-k>", "<C-w>k", opts)
+		vim.keymap.set("n", "<C-j>", "<C-w>j", opts)
+		vim.keymap.set("n", "i", Toggle_hidden_files, opts)
 		vim.keymap.set("n", "d", function()
 			local path = Netrw_get_fullpath_under_cursor()
 				vim.cmd("echohl Question")
@@ -1638,7 +1659,7 @@ vim.api.nvim_create_autocmd({ "TextChanged", "InsertLeave" }, {
 })
 
 
--- Netrw syntax highlighting
+-- Netrw rendering
 local netrw_ns = vim.api.nvim_create_namespace("netrw_connectors")
 local function get_netrw_lines(buf)
 	return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -1652,6 +1673,61 @@ local function depth_of(line)
 	end
 	return depth
 end
+local function get_fullpath_for_line(target_lnum)
+	local base_dir = vim.w.netrw_treetop or vim.b.netrw_curdir
+	if not base_dir then return nil end
+	local depth_str = "| "
+	local function depth_and_name(line)
+		local d = 0
+		local rest = line
+		while rest:sub(1, #depth_str) == depth_str do
+			d = d + 1
+			rest = rest:sub(#depth_str + 1)
+		end
+		rest = rest:gsub("^%d+/?%s*", "")
+		rest = rest:gsub("%s*%-%->.*$", "")
+		rest = rest:gsub("[/@%*=|]%s*$", "")
+		return d, rest
+	end
+	local lnum = target_lnum or vim.fn.line(".")
+	local line_str = vim.fn.getline(lnum)
+	local cur_depth, name = depth_and_name(line_str)
+	if name == ".." then
+		return vim.fn.fnamemodify(base_dir .. "/..", ":p")
+	end
+	if name == "" or cur_depth == 0 then
+		return vim.fn.fnamemodify(base_dir, ":p")
+	end
+	local parts = { name }
+	local want_depth = cur_depth
+	while want_depth > 1 and lnum > 1 do
+		lnum = lnum - 1
+		local d, n = depth_and_name(vim.fn.getline(lnum))
+		if d < want_depth and d > 0 then
+			table.insert(parts, 1, n)
+			want_depth = d
+		end
+	end
+	return vim.fn.fnamemodify(base_dir .. "/" .. table.concat(parts, "/"), ":p")
+end
+local function format_size(bytes)
+	local n = tonumber(bytes)
+	if not n then return "" end
+	local units = { "B", "K", "M", "G", "T" }
+	local i = 1
+	while n >= 1024 and i < #units do
+		n = n / 1024
+		i = i + 1
+	end
+	if i == 1 then
+		return string.format("%d%s", n, units[i])
+	end
+	return string.format("%.1f%s", n, units[i])
+end
+local function format_time(epoch)
+	if not epoch then return "" end
+	return os.date("%Y-%m-%d %H:%M", epoch)
+end
 local function render_netrw_connectors(buf)
 	if not vim.api.nvim_buf_is_valid(buf) then return end
 	if vim.bo[buf].filetype ~= "netrw" then return end
@@ -1661,6 +1737,8 @@ local function render_netrw_connectors(buf)
 	for i, line in ipairs(lines) do
 		depths[i] = depth_of(line)
 	end
+	local uv = vim.uv or vim.loop
+	local sort_mode = vim.b.netrw_sort_by or vim.g.netrw_sort_by or "name"
 	for i, _ in ipairs(lines) do
 		local d = depths[i]
 		if d > 0 then
@@ -1693,20 +1771,66 @@ local function render_netrw_connectors(buf)
 				virt_text_pos = "inline",
 			})
 		end
+		if sort_mode == "size" or sort_mode == "time" then
+			local path = get_fullpath_for_line(i)
+			if path then
+				local stat = uv.fs_stat(path)
+				if stat then
+					local formatted = ""
+					if i == 1 then
+						formatted = ""
+					elseif sort_mode == "size" and stat.type == "file" then
+						formatted = "  " .. format_size(stat.size)
+					elseif sort_mode == "time" then
+						formatted = "  " .. format_time(stat.mtime.sec)
+					end
+					if formatted ~= "" then
+						vim.api.nvim_buf_set_extmark(buf, netrw_ns, i - 1, 0, {
+							virt_text = { { formatted, "NetrwSize" } },
+							virt_text_pos = "eol",
+						})
+					end
+				end
+			end
+		end
 	end
 end
 local NetrwSyntaxGI = vim.api.nvim_create_augroup("NetrwSyntax", { clear = true })
-vim.api.nvim_create_autocmd({ "FileType" }, {
+vim.api.nvim_create_autocmd({ "FileType", "BufEnter", "TextChanged" }, {
 	group = NetrwSyntaxGI,
-	pattern = "netrw",
+	pattern = "*",
 	callback = function(args)
-		vim.opt_local.conceallevel = 2
-		vim.opt_local.concealcursor = "nc"
-		render_netrw_connectors(args.buf)
+		if vim.bo[args.buf].filetype == "netrw" then
+			vim.api.nvim_set_hl(0, "NetrwSize", { fg = "#E0AF68" })
+			vim.opt_local.conceallevel = 2
+			vim.opt_local.concealcursor = "nc"
+			render_netrw_connectors(args.buf)
+		end
+	end,
+})
+vim.api.nvim_create_autocmd({ "FocusGained" }, {
+	group = NetrwSyntaxGI,
+	callback = function()
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
+				render_netrw_connectors(buf)
+			end
+		end
 	end,
 })
 vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
 	group = NetrwSyntaxGI,
+	callback = function()
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
+				render_netrw_connectors(buf)
+			end
+		end
+	end,
+})
+vim.api.nvim_create_autocmd("ModeChanged", {
+	group = NetrwSyntaxGI,
+	pattern = "*:[vV\x16]*",
 	callback = function()
 		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
@@ -1943,9 +2067,17 @@ function StatusLineSetup()
 	hl(0, "MyStlTerminal", { bg = colors.fg_dark, fg = colors.bg, bold = true, italic = true })
 	hl(0, "MyStlFileType", { bg = colors.pink, fg = colors.bg, bold = true, italic = true })
 	hl(0, "MyStlFileLines", { bg = colors.bg_alt, fg = colors.red, bold = true, italic = true })
+	hl(0, "MyNetrwSort", { bg = colors.pink, fg = colors.bg, bold = true })
 	vim.o.laststatus = 2
 end
 function StatusLineRender(flag)
+	local sort_modes = {
+		name = "\u{f15d} ",
+		time = "\u{f017} ",
+		size = "\u{f0a0} ",
+		exten = "\u{f1c9} ",
+		default = "\u{f0dc} ",
+	}
 	if flag == 2 then
 		local name = vim.fn.expand("%:t")
 		local focused = vim.g.statusline_winid == vim.api.nvim_get_current_win()
@@ -1953,8 +2085,14 @@ function StatusLineRender(flag)
 			return "  " .. name
 	end
 		local netrw_line = string.format("%%#%s# 󰙅 Netrw %%*", "MyStlReplace")
+		local prompt = string.format("%%#%s# Sorted by:%%*", "MyNetrwSort")
+		local current_sort = vim.g.netrw_sort_by
+		local sort = string.format("%%#%s# "..current_sort.." %s %%*", "MyStlVisual", sort_modes[current_sort])
 		return table.concat({
 			netrw_line,
+			"%=",
+			prompt,
+			sort,
 		})
 	end
 	local mode_names = {
