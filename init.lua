@@ -2,7 +2,7 @@ vim.g.mapleader = " "
 vim.g.localleader = " "
 vim.g.markdown_syntax_conceal = 1
 vim.g.netrw_list_hide = '^\\.\\.\\=/\\=$,^\\..*'
-vim.g.netrw_hide = 1
+vim.g.netrw_hide = 0
 
 -- General settings
 vim.opt.modelines = 0
@@ -501,14 +501,14 @@ local function strstr(string, sub)
 	end
 	return true
 end
-local function table_index(table, value)
-	for i, v in ipairs(table) do
-		if v == value then
-			return i
-		end
-	end
-	return nil
-end
+-- local function table_index(table, value)
+-- 	for i, v in ipairs(table) do
+-- 		if v == value then
+-- 			return i
+-- 		end
+-- 	end
+-- 	return nil
+-- end
 
 
 -- 42 header pattern
@@ -859,7 +859,7 @@ function Create_new_file_or_directory()
 		local target = Netrw_get_fullpath_under_cursor()
 		directory = vim.fn.isdirectory(target) ~= 0 and target or vim.fn.fnamemodify(target, ":h")
 	end
-	local full_path = directory..f_name
+	local full_path = directory.."/"..f_name
 	if vim.fn.filereadable(full_path) ~= 0 or vim.fn.isdirectory(full_path) ~= 0 then
 		print("\nFile or Directory already exists!!")
 		return
@@ -902,16 +902,16 @@ function Delete_selected()
 	end
 end
 function Rename_file_or_directory()
-	local old_name = vim.fn.expand("<cfile>")
-	local directory = vim.b.netrw_curdir
-	local old_path = directory .. "/" .. old_name
+	local old_path = Netrw_get_fullpath_under_cursor()
+	local old_name = vim.fn.fnamemodify(old_path, ":t")
+	local directory = vim.fn.fnamemodify(old_path, ":h")
 	vim.cmd("echohl Question")
 	local new_name = vim.fn.input("Rename to: ", old_name, "file")
 	vim.cmd("echohl None")
 	if new_name == nil or new_name == "" or new_name == old_name then return end
 	local new_path = directory .. "/" .. new_name
 	os.rename(old_path, new_path)
-	vim.cmd("Ex")
+	Refresh_netrw(directory)
 end
 NetrwMapsGI = vim.api.nvim_create_augroup("NetrwMaps", { clear = true })
 vim.api.nvim_create_autocmd({ "FileType" }, {
@@ -1127,6 +1127,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 function CCtags()
 	local handle = io.popen("which ctags")
+	if handle == nil then return end
 	local ctags = vim.trim(handle:read("*a"))
 	handle:close()
 	if vim.fn.executable(ctags) == 0 then
@@ -1139,7 +1140,8 @@ function CCtags()
 		return
 	end
 	local file_path = vim.fn.expand("%:p:h")
-	local handle = io.popen("echo | "..compiler.." -v -x c - 2>&1")
+	handle = io.popen("echo | "..compiler.." -v -x c - 2>&1")
+	if handle == nil then return end
 	if not handle then
 		return
 	end
@@ -1253,13 +1255,15 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 function PyCtags()
 	local handle = io.popen("which ctags")
+	if handle == nil then return end
 	local ctags = vim.trim(handle:read("*a"))
 	handle:close()
 	if vim.fn.executable(ctags) == 0 then
 		print("Ctags doesn't exist on your machine!!")
 		return
 	end
-	local handle = io.popen("which python3")
+	handle = io.popen("which python3")
+	if handle == nil then return end
 	local python3 = vim.trim(handle:read("*a"))
 	handle:close()
 	if vim.fn.executable(python3) == 0 then
@@ -1267,7 +1271,8 @@ function PyCtags()
 		return
 	end
 	local file_path = vim.fn.expand("%:p:h")
-	local handle = io.popen('python3 -c "import sys; print(\"\n\".join(sys.path))"')
+	handle = io.popen('python3 -c "import sys; print(\"\n\".join(sys.path))"')
+	if handle == nil then return end
 	if not handle then
 		return
 	end
@@ -2110,7 +2115,7 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 -- Search highlight
 vim.opt.hlsearch = false
 function Toggle_hlsearch()
-	vim.opt.hlsearch = not vim.opt.hlsearch:get()
+	vim.opt.hlsearch = not vim.opt.hlsearch:get()  ---@diagnostic disable-line: undefined-field
 end
 
 
