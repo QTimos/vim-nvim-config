@@ -363,7 +363,7 @@ function PY_skeleton()
 		"",
 		"",
 		"def main() -> None:",
-		"    raise NotImplentedError()",
+		"    raise NotImplementedError()",
 		"",
 		"",
 		"if __name__ == \"__main__\":",
