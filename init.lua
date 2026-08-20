@@ -1009,7 +1009,16 @@ vim.api.nvim_create_autocmd({ "BufEnter" }, {
 Config = {
 	width = 0.8,
 	height = 0.8,
-	border = "rounded",
+	border = {
+		{ "╭", "FloatBorder" },
+		{ "─", "FloatBorder" },
+		{ "╮", "FloatBorder" },
+		{ "│", "FloatBorder" },
+		{ "╯", "FloatBorder" },
+		{ "─", "FloatBorder" },
+		{ "╰", "FloatBorder" },
+		{ "│", "FloatBorder" },
+	},
 	winblend = 0,
 	shell = nil,
 	toggle_keymap = "<Leader>ter",
@@ -1041,6 +1050,7 @@ function CreateFloatingWindow(buf)
 	})
 	vim.wo[win].winblend = Config.winblend
 	vim.wo[win].cursorline = true
+	vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:FloatBorder"
 	return win
 end
 function ToggleTerminal(cmd)
