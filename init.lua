@@ -511,6 +511,14 @@ end
 -- 	end
 -- 	return nil
 -- end
+local function in_list(var, items)
+	for _, value in ipairs(items) do
+		if value == var then
+			return true
+		end
+	end
+	return false
+end
 
 
 -- 42 header pattern
@@ -925,6 +933,7 @@ vim.api.nvim_create_autocmd({ "FileType" }, {
 	group = NetrwMapsGI,
 	pattern = "netrw",
 	callback = function()
+		vim.cmd([[cnoreabbrev <expr> w (getcmdtype() ==# ':' && getcmdline() ==# 'w' && &filetype ==# 'netrw') ? '' : 'w']])
 		if netrw_cr_orig == nil then
 			netrw_cr_orig = vim.fn.maparg("<CR>", "n", false, true)
 		end
@@ -1876,6 +1885,15 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 				return "<BS>"
 			end
 		end, { buffer = 0, expr = true, silent = true })
+	end
+})
+
+vim.api.nvim_create_autocmd({"BufEnter"}, {
+	callback = function()
+		local file_type = vim.bo[0].filetype
+		if in_list(file_type, { "c", "python", "lua", "vim", "rust", "go" }) then
+			vim.opt.colorcolumn = "80"
+		end
 	end
 })
 
