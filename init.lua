@@ -519,6 +519,11 @@ local function in_list(var, items)
 	end
 	return false
 end
+local function print_table(items)
+	for _, value in ipairs(items) do
+		print(value.."\n")
+	end
+end
 
 
 -- 42 header pattern
@@ -2182,6 +2187,79 @@ vim.api.nvim_create_autocmd({"BufEnter"}, {
 		end
 	end
 })
+
+
+-- File_preview
+local preview_on = false
+local preview_win = nil
+function CreatePreviewWindow(buf)
+	local width = math.floor(vim.o.columns * 0.8)
+	local height = math.floor(vim.o.lines * 0.8)
+	local opts = {
+		relative = "editor",
+		row = math.floor((vim.o.lines - vim.o.cmdheight - height)/2),
+		col = math.floor((vim.o.columns - width)/2),
+		width = width,
+		height = height,
+		style = "minimal",
+		border = {
+			{ "╭", "FloatBorder" },
+			{ "─", "FloatBorder" },
+			{ "╮", "FloatBorder" },
+			{ "│", "FloatBorder" },
+			{ "╯", "FloatBorder" },
+			{ "─", "FloatBorder" },
+			{ "╰", "FloatBorder" },
+			{ "│", "FloatBorder" },
+		},
+		title = "File Preview",
+		title_pos = "center",
+		focusable = false,
+	}
+	local win = vim.api.nvim_open_win(buf, false, opts)
+	vim.wo[win].winblend = Config.winblend
+	vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:FloatBorder"
+	return win
+end
+local function preview()
+	if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+		vim.api.nvim_win_close(preview_win, true)
+		preview_win = nil
+	end
+	local cwin = vim.api.nvim_get_current_win()
+	local cbuf = vim.api.nvim_get_current_buf()
+	local filetype = vim.bo[cbuf].filetype
+	if vim.api.nvim_win_is_valid(cwin) then
+		local filename = Netrw_get_fullpath_under_cursor()
+		if filename ~= nil and string.sub(filename, -1) ~= '/' and vim.fn.filereadable(filename) and filetype == "netrw" then
+			local buf = vim.api.nvim_create_buf(false, true)
+			local file_type = vim.filetype.match({ filename = filename })
+			local content = vim.fn.readfile(filename)
+			local success, _ = pcall(vim.api.nvim_buf_set_lines, buf, 0, -1, false, content)
+			if not success then return end
+			vim.bo[buf].filetype = file_type
+			preview_win = CreatePreviewWindow(buf)
+		end
+	end
+end
+vim.api.nvim_create_autocmd("CursorMoved", {
+	callback = function()
+		if preview_on then
+			preview()
+		end
+	end
+})
+vim.keymap.set("n", "<Leader>pr", function()
+	preview_on = not preview_on
+	if preview_on then
+		preview()
+	end
+	if not preview_on and preview_win and vim.api.nvim_win_is_valid(preview_win) then
+		vim.api.nvim_win_close(preview_win, true)
+		preview_win = nil
+	end
+end, { silent = true })
+
 
 
 -- Cursor animations
