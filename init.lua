@@ -33,6 +33,9 @@ vim.opt.colorcolumn = "80"
 vim.opt.list = true
 vim.opt.listchars = { tab = "»-", trail = "·", extends = "›", precedes = "‹" }
 
+-- Bin directory for all external tools
+BinDir = vim.fn.stdpath("config").."/bin"
+
 -- Colorscheme- Midnight Nexus
 vim.highlight.priorities.semantic_tokens = 0
 function MidnightNexus()
@@ -1656,6 +1659,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 vim.api.nvim_create_autocmd({ "BufEnter" }, {
 	group = MDSyntaxGI,
+	pattern = "*",
 	callback = function()
 		if vim.bo.filetype == "markdown" then
 			apply_conceal(0)
@@ -1664,6 +1668,7 @@ vim.api.nvim_create_autocmd({ "BufEnter" }, {
 })
 vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
 	group = MDSyntaxGI,
+	pattern = "*",
 	callback = function()
 		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
@@ -1834,6 +1839,7 @@ vim.api.nvim_create_autocmd({ "FileType", "BufEnter", "TextChanged" }, {
 })
 vim.api.nvim_create_autocmd({ "FocusGained" }, {
 	group = NetrwSyntaxGI,
+	pattern = "*",
 	callback = function()
 		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
@@ -1844,6 +1850,7 @@ vim.api.nvim_create_autocmd({ "FocusGained" }, {
 })
 vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
 	group = NetrwSyntaxGI,
+	pattern = "*",
 	callback = function()
 		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
@@ -1894,6 +1901,7 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 })
 
 vim.api.nvim_create_autocmd({"BufEnter"}, {
+	pattern = "*",
 	callback = function()
 		local file_type = vim.bo[0].filetype
 		if in_list(file_type, { "c", "python", "lua", "vim", "rust", "go" }) then
@@ -1905,7 +1913,6 @@ vim.api.nvim_create_autocmd({"BufEnter"}, {
 
 -- LSP bootstrap
 LSPBootstrapV = vim.api.nvim_create_augroup("LSPBootstrap", { clear = true })
-BinDir = vim.fn.stdpath("config").."/bin"
 vim.fn.mkdir(BinDir, "p")
 vim.env.PATH = BinDir..":"..vim.env.PATH
 Servers = {
@@ -2052,6 +2059,7 @@ vim.api.nvim_create_autocmd("FileType", {
 -- Completions
 vim.api.nvim_create_autocmd("LspAttach", {
 	group = LSPBootstrapV,
+	pattern = "*",
 	callback = function(args)
 		local client = vim.lsp.get_client_by_id(args.data.client_id)
 		if client and client:supports_method("textDocument/completion") then
@@ -2177,7 +2185,7 @@ end
 StatusLineGI = vim.api.nvim_create_augroup("StatusLine", { clear = true })
 vim.api.nvim_create_autocmd({"BufEnter"}, {
 	group = StatusLineGI,
-	pattern = {},
+	pattern = "*",
 	callback = function()
 		local file_type = vim.bo[0].filetype
 		if file_type == "netrw" then
@@ -2243,6 +2251,7 @@ local function preview()
 	end
 end
 vim.api.nvim_create_autocmd("CursorMoved", {
+	pattern = "*",
 	callback = function()
 		if preview_on then
 			preview()
@@ -2349,7 +2358,7 @@ end
 CurAnimGI = vim.api.nvim_create_augroup("CurAnim", { clear = true })
 vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 	group = CurAnimGI,
-	pattern = "",
+	pattern = "*",
 	callback = function()
 		-- CursorAnimate()
 	end
@@ -2361,6 +2370,228 @@ vim.opt.hlsearch = false
 function Toggle_hlsearch()
 	vim.opt.hlsearch = not vim.opt.hlsearch:get()  ---@diagnostic disable-line: undefined-field
 end
+
+
+-- Image Viewer Hook
+local dir = vim.fn.stdpath("config")
+local install_dir = dir .. "/bin"
+local chafa_bin = install_dir .. "/chafa"
+vim.fn.mkdir(install_dir, "p")
+vim.env.PATH = install_dir .. ":" .. vim.env.PATH
+
+local function is_exe(cmd)
+    return vim.fn.executable(cmd) == 1
+end
+local function ensure_imagemagick()
+    if is_exe("magick") or is_exe(install_dir .. "/magick") then
+        return true
+    end
+    vim.notify("[Bootstrap] Downloading portable ImageMagick AppImage...")
+    local url = "https://imagemagick.org/archive/binaries/ImageMagick-x86_64.AppImage"
+    local out = install_dir .. "/magick"
+    local cmd = string.format(
+        "curl -L -o '%s' '%s' && chmod +x '%s'",
+        out, url, out
+    )
+    vim.fn.jobstart(cmd, {
+        on_exit = function(_, code)
+            if code == 0 then
+                vim.notify("[Bootstrap] ImageMagick installed (portable AppImage)")
+            else
+                vim.notify("[Bootstrap] ImageMagick download failed", vim.log.levels.ERROR)
+            end
+        end,
+    })
+    return false
+end
+local function ensure_ueberzugpp()
+    if is_exe("ueberzugpp") or is_exe(install_dir .. "/ueberzugpp") then
+        return true
+    end
+    vim.notify("[Bootstrap] Downloading ueberzugpp static binary...")
+    local url = "https://github.com/jstkdng/ueberzugpp/releases/download/v2.9.10/ueberzugpp-2.9.10-x86_64.AppImage"
+    local out = install_dir .. "/ueberzugpp"
+    local cmd = string.format(
+        "curl -L -o '%s' '%s' && chmod +x '%s'",
+        out, url, out
+    )
+    vim.fn.jobstart(cmd, {
+        on_exit = function(_, code)
+            if code == 0 then
+                vim.notify("[Bootstrap] ueberzugpp installed")
+            else
+                vim.notify("[Bootstrap] ueberzugpp download failed (non-fatal)", vim.log.levels.WARN)
+            end
+        end,
+    })
+    return false
+end
+vim.api.nvim_create_user_command('ViewImage', function(opts)
+    local file_path = vim.fn.expand(opts.args)
+    if vim.fn.filereadable(file_path) == 0 then
+        vim.notify("Error: File not found", vim.log.levels.ERROR)
+        return
+    end
+    local escaped_path = vim.fn.shellescape(file_path)
+    if vim.fn.filereadable(chafa_bin) == 1 then
+        local cmd = string.format("%s -c full -f kitty --scale 1.0 %s > /dev/tty", vim.fn.shellescape(chafa_bin), escaped_path)
+        vim.fn.system(cmd)
+        return
+    end
+    vim.notify("[Bootstrap] Chafa engine not found. Compiling from source asynchronously...")
+    local temp_clone_dir = dir .. "/tmp_clone_chafa"
+    local compile_cmd = string.format(
+        "rm -rf '%s' && mkdir -p '%s' && wget https://hpjansson.org -P '%s' && tar -xf '%s/chafa-1.18.3.tar.xz' -C '%s' && cd '%s/chafa-1.18.3' && ./configure --prefix='%s' --disable-doc && make -j$(nproc 2>/dev/null || echo 2) && make install && rm -rf '%s'",
+        temp_clone_dir, temp_clone_dir, temp_clone_dir, temp_clone_dir, temp_clone_dir, temp_clone_dir, dir, temp_clone_dir
+    )
+    vim.fn.jobstart(compile_cmd, {
+        on_exit = function(_, exit_code)
+            if exit_code == 0 then
+                vim.notify("[Bootstrap] Chafa successfully compiled! Re-run :ViewImage now.")
+            else
+                vim.notify("[Bootstrap] Chafa compilation failed (exit code " .. exit_code .. ")", vim.log.levels.ERROR)
+            end
+        end
+    })
+end, { nargs = 1, complete = 'file' })
+
+local function bootstrap_image_deps()
+    vim.schedule(function()
+        ensure_imagemagick()
+        ensure_ueberzugpp()
+    end)
+end
+bootstrap_image_deps()
+
+local load_image_ns = vim.api.nvim_create_namespace("load_image_md")
+local chafa_fg_hl = {
+    [30] = "ChafaFgBlack",       [31] = "ChafaFgRed",
+    [32] = "ChafaFgGreen",       [33] = "ChafaFgYellow",
+    [34] = "ChafaFgBlue",        [35] = "ChafaFgMagenta",
+    [36] = "ChafaFgCyan",        [37] = "ChafaFgWhite",
+    [90] = "ChafaFgBrightBlack", [91] = "ChafaFgBrightRed",
+    [92] = "ChafaFgBrightGreen", [93] = "ChafaFgBrightYellow",
+    [94] = "ChafaFgBrightBlue",  [95] = "ChafaFgBrightMagenta",
+    [96] = "ChafaFgBrightCyan",  [97] = "ChafaFgBrightWhite",
+}
+
+local function setup_chafa_highlights()
+    local hl = vim.api.nvim_set_hl
+    hl(0, "ChafaFgBlack",         { fg = "#0F111A" })
+    hl(0, "ChafaFgRed",           { fg = "#F7768E" })
+    hl(0, "ChafaFgGreen",         { fg = "#9ECE6A" })
+    hl(0, "ChafaFgYellow",        { fg = "#E0AF68" })
+    hl(0, "ChafaFgBlue",          { fg = "#7AA2F7" })
+    hl(0, "ChafaFgMagenta",       { fg = "#BB9AF7" })
+    hl(0, "ChafaFgCyan",          { fg = "#7DCFFF" })
+    hl(0, "ChafaFgWhite",         { fg = "#C0CAF5" })
+    hl(0, "ChafaFgBrightBlack",   { fg = "#3B4261" })
+    hl(0, "ChafaFgBrightRed",     { fg = "#F7768E" })
+    hl(0, "ChafaFgBrightGreen",   { fg = "#9ECE6A" })
+    hl(0, "ChafaFgBrightYellow",  { fg = "#E0AF68" })
+    hl(0, "ChafaFgBrightBlue",    { fg = "#7AA2F7" })
+    hl(0, "ChafaFgBrightMagenta", { fg = "#BB9AF7" })
+    hl(0, "ChafaFgBrightCyan",    { fg = "#7DCFFF" })
+    hl(0, "ChafaFgBrightWhite",   { fg = "#C0CAF5" })
+end
+setup_chafa_highlights()
+
+local function parse_load_image(line)
+    return line:match('%-%-%s*LOAD_IMAGE%s*=%s*"([^"]+)"%s*%-%-')
+end
+local function parse_chafa_line(line)
+    local chunks = {}
+    local current_hl = "Normal"
+    local buf = {}
+    local i = 1
+    while i <= #line do
+        local s, e = line:find("\27%[([%d;]*)m", i)
+        if s == i then
+            if #buf > 0 then
+                table.insert(chunks, { table.concat(buf), current_hl })
+                buf = {}
+            end
+            local code = line:sub(s + 2, e - 1)
+            local num = tonumber(code:match("^(%d+)"))
+            if num == 0 or num == nil then
+                current_hl = "Normal"
+            elseif chafa_fg_hl[num] then
+                current_hl = chafa_fg_hl[num]
+            end
+            i = e + 1
+        else
+            local stop = s and (s - 1) or #line
+            table.insert(buf, line:sub(i, stop))
+            i = stop + 1
+        end
+    end
+    if #buf > 0 then
+        table.insert(chunks, { table.concat(buf), current_hl })
+    end
+    return chunks
+end
+
+local function chafa_lines_chunks(path, width, height)
+    local bin = vim.fn.filereadable(chafa_bin) == 1 and chafa_bin or "chafa"
+    if not is_exe(bin) and vim.fn.filereadable(chafa_bin) == 0 then
+        return {}
+    end
+    local cmd = string.format(
+        "%s --colors 8 --fg-only --format symbols --size %dx%d %s 2>/dev/null",
+        vim.fn.shellescape(bin), width, height, vim.fn.shellescape(path)
+    )
+    local out = vim.fn.systemlist(cmd)
+    local result = {}
+    for _, line in ipairs(out) do
+        table.insert(result, parse_chafa_line(line))
+    end
+    return result
+end
+
+local function refresh_load_images(buf)
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    if vim.bo[buf].filetype ~= "markdown" then return end
+    vim.api.nvim_buf_clear_namespace(buf, load_image_ns, 0, -1)
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local win_width = vim.api.nvim_win_get_width(0)
+    local max_width = math.max(20, win_width - 8)
+    for i, line in ipairs(lines) do
+        local path = parse_load_image(line)
+        if path and vim.fn.filereadable(path) == 1 then
+            local img = chafa_lines_chunks(path, max_width, 30)
+            local opts = { conceal_lines = "" }
+            if #img > 0 then
+                opts.virt_lines = img
+                opts.virt_lines_above = false
+            end
+            vim.api.nvim_buf_set_extmark(buf, load_image_ns, i - 1, 0, opts)
+        end
+    end
+end
+
+LoadImageGI = vim.api.nvim_create_augroup("LoadImageHook", { clear = true })
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost", "TextChanged", "InsertLeave" }, {
+    group = LoadImageGI,
+    pattern = { "*.md", "*.markdown" },
+    callback = function(ev)
+        if vim.bo[ev.buf].filetype == "markdown" then
+            vim.schedule(function()
+                refresh_load_images(ev.buf)
+            end)
+        end
+    end,
+})
+vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+    group = LoadImageGI,
+    pattern = "*",
+    callback = function()
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
+                refresh_load_images(buf)
+            end
+        end
+    end,
+})
 
 
 -- Keymaps
@@ -2421,6 +2652,7 @@ end, { silent = true })
 vim.keymap.set("n", "<CR>", "za", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>qa", ":qa!<CR>", { silent = true })
 vim.keymap.set("t", "<Leader>qa", "<C-\\><C-n>:qa!<CR>", { silent = true })
+
 
 
 -- Always keep at the bottom
