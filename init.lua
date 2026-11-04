@@ -2372,226 +2372,270 @@ function Toggle_hlsearch()
 end
 
 
--- Image Viewer Hook
-local dir = vim.fn.stdpath("config")
-local install_dir = dir .. "/bin"
-local chafa_bin = install_dir .. "/chafa"
-vim.fn.mkdir(install_dir, "p")
-vim.env.PATH = install_dir .. ":" .. vim.env.PATH
-
-local function is_exe(cmd)
-    return vim.fn.executable(cmd) == 1
-end
+-- Markdown LOAD_IMAGE → Kitty unicode placeholders
+vim.fn.mkdir(BinDir, "p")
+vim.env.PATH = BinDir .. ":" .. vim.env.PATH
 local function ensure_imagemagick()
-    if is_exe("magick") or is_exe(install_dir .. "/magick") then
-        return true
-    end
-    vim.notify("[Bootstrap] Downloading portable ImageMagick AppImage...")
-    local url = "https://imagemagick.org/archive/binaries/ImageMagick-x86_64.AppImage"
-    local out = install_dir .. "/magick"
-    local cmd = string.format(
-        "curl -L -o '%s' '%s' && chmod +x '%s'",
-        out, url, out
-    )
-    vim.fn.jobstart(cmd, {
-        on_exit = function(_, code)
-            if code == 0 then
-                vim.notify("[Bootstrap] ImageMagick installed (portable AppImage)")
-            else
-                vim.notify("[Bootstrap] ImageMagick download failed", vim.log.levels.ERROR)
-            end
-        end,
-    })
-    return false
+	if vim.fn.executable("magick") == 1 or vim.fn.executable(BinDir .. "/magick") == 1 then
+		return true
+	end
+	vim.notify("[Bootstrap] Downloading portable ImageMagick AppImage...")
+	local out = BinDir .. "/magick"
+	local cmd = string.format(
+		"curl -L -o '%s' 'https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-35/ImageMagick-7.1.2-35-gcc-x86_64.AppImage' && chmod +x '%s'",
+		out, out
+	)
+	vim.fn.jobstart(cmd, {
+		on_exit = function(_, code)
+			if code == 0 then
+				vim.notify("[Bootstrap] ImageMagick installed successfully!")
+			else
+				vim.notify("[Bootstrap] ImageMagick download failed", vim.log.levels.ERROR)
+			end
+		end,
+	})
+	return false
 end
-local function ensure_ueberzugpp()
-    if is_exe("ueberzugpp") or is_exe(install_dir .. "/ueberzugpp") then
-        return true
-    end
-    vim.notify("[Bootstrap] Downloading ueberzugpp static binary...")
-    local url = "https://github.com/jstkdng/ueberzugpp/releases/download/v2.9.10/ueberzugpp-2.9.10-x86_64.AppImage"
-    local out = install_dir .. "/ueberzugpp"
-    local cmd = string.format(
-        "curl -L -o '%s' '%s' && chmod +x '%s'",
-        out, url, out
-    )
-    vim.fn.jobstart(cmd, {
-        on_exit = function(_, code)
-            if code == 0 then
-                vim.notify("[Bootstrap] ueberzugpp installed")
-            else
-                vim.notify("[Bootstrap] ueberzugpp download failed (non-fatal)", vim.log.levels.WARN)
-            end
-        end,
-    })
-    return false
+vim.schedule(function()
+	ensure_imagemagick()
+end)
+local is_kitty = vim.env.KITTY_WINDOW_ID ~= nil or (vim.env.TERM or ""):lower():find("kitty") ~= nil
+if is_kitty then
+	local ns = vim.api.nvim_create_namespace("load_image_kitty")
+	local tty_file = nil
+	local uv = vim.uv or vim.loop
+	local function write(data)
+		if not data or data == "" then return end
+		vim.fn.chansend(2, data)
+	end
+	local image_ids = {}
+	local next_id = 1
+	local transmitted = {}
+	local function ensure_hl(id)
+		local name = "KittyImg" .. id
+		if vim.fn.hlexists(name) == 0 then
+			local r = (id >> 16) & 0xFF
+			local g = (id >> 8) & 0xFF
+			local b = id & 0xFF
+			vim.api.nvim_set_hl(0, name, {
+				fg = string.format("#%02x%02x%02x", r, g, b),
+				bg = "NONE",
+			})
+		end
+		return name
+	end
+	local function fetch_remote_image(url)
+		if not url or url == "" then return nil end
+		local ext = url:match("%.([%w]+)$")
+		if not ext or #ext > 4 then ext = "png" end
+		local hash = vim.fn.sha256(url)
+		local cache_dir = vim.fn.stdpath("cache") .. "/markdown_images"
+		vim.fn.mkdir(cache_dir, "p")
+		local local_path = string.format("%s/%s.%s", cache_dir, hash, ext)
+		if vim.fn.filereadable(local_path) == 1 then
+			return local_path
+		end
+		local download_cmd = ""
+		if vim.fn.executable("curl") == 1 then
+			download_cmd = string.format("curl -s -L %s -o %s", vim.fn.shellescape(url), vim.fn.shellescape(local_path))
+		elseif vim.fn.executable("wget") == 1 then
+			download_cmd = string.format("wget -q %s -O %s", vim.fn.shellescape(url), vim.fn.shellescape(local_path))
+		else
+			return nil
+		end
+		local success = os.execute(download_cmd)
+		if success == 0 or success == true then
+			return local_path
+		end
+		return nil
+	end
+	local function prepare_image(path)
+		local ext = path:sub(-4):lower()
+		if ext == ".png" then return path end
+		local tmp_path = "/tmp/kitty_" .. vim.fn.sha256(path) .. ".png"
+		if vim.fn.filereadable(tmp_path) == 0 then
+			local magick = vim.fn.executable("magick") == 1 and "magick" or "convert"
+			if vim.fn.executable(magick) == 1 then
+				vim.fn.system(string.format("%s %s %s",
+					magick, vim.fn.shellescape(path), vim.fn.shellescape(tmp_path)))
+			else
+				return nil
+			end
+		end
+		return tmp_path
+	end
+	local ROWCOL_DIACRITICS = {
+		0x0305, 0x030D, 0x030E, 0x0310, 0x0312, 0x033D, 0x033E, 0x033F, 0x0346, 0x034A, 0x034B, 0x034C,
+		0x0350, 0x0351, 0x0352, 0x0357, 0x035B, 0x0363, 0x0364, 0x0365, 0x0366, 0x0367, 0x0368, 0x0369,
+		0x036A, 0x036B, 0x036C, 0x036D, 0x036E, 0x036F, 0x0483, 0x0484, 0x0485, 0x0486, 0x0487, 0x0592,
+		0x0593, 0x0594, 0x0595, 0x0597, 0x0598, 0x0599, 0x059C, 0x059D, 0x059E, 0x059F, 0x05A0, 0x05A1,
+		0x05A8, 0x05A9, 0x05AB, 0x05AC, 0x05AF, 0x05C4, 0x0610, 0x0611, 0x0612, 0x0613, 0x0614, 0x0615,
+		0x0616, 0x0617, 0x0657, 0x0658, 0x0659, 0x065A, 0x065B, 0x065D, 0x065E, 0x06D6, 0x06D7, 0x06D8,
+		0x06D9, 0x06DA, 0x06DB, 0x06DC, 0x06DF, 0x06E0, 0x06E1, 0x06E2, 0x06E4, 0x06E7, 0x06E8, 0x06EB,
+		0x06EC, 0x0730, 0x0732, 0x0733, 0x0735, 0x0736, 0x073A, 0x073D, 0x073F, 0x0740, 0x0741, 0x0743,
+		0x0745, 0x0747, 0x0749, 0x074A, 0x07EB, 0x07EC, 0x07ED, 0x07EE, 0x07EF, 0x07F0, 0x07F1, 0x07F3,
+		0x0816, 0x0817, 0x0818, 0x0819, 0x081B, 0x081C, 0x081D, 0x081E, 0x081F, 0x0820, 0x0821, 0x0822,
+		0x0823, 0x0825, 0x0826, 0x0827, 0x0829, 0x082A, 0x082B, 0x082C, 0x082D, 0x0951, 0x0953, 0x0954,
+		0x0F82, 0x0F83, 0x0F86, 0x0F87, 0x135D, 0x135E, 0x135F, 0x17DD, 0x193A, 0x1A17, 0x1A75, 0x1A76,
+		0x1A77, 0x1A78, 0x1A79, 0x1A7A, 0x1A7B, 0x1A7C, 0x1B6B, 0x1B6D, 0x1B6E, 0x1B6F, 0x1B70, 0x1B71,
+		0x1B72, 0x1B73, 0x1CD0, 0x1CD1, 0x1CD2, 0x1CDA, 0x1CDB, 0x1CE0, 0x1DC0, 0x1DC1, 0x1DC3, 0x1DC4,
+		0x1DC5, 0x1DC6, 0x1DC7, 0x1DC8, 0x1DC9, 0x1DCB, 0x1DCC, 0x1DD1, 0x1DD2, 0x1DD3, 0x1DD4, 0x1DD5,
+		0x1DD6, 0x1DD7, 0x1DD8, 0x1DD9, 0x1DDA, 0x1DDB, 0x1DDC, 0x1DDD, 0x1DDE, 0x1DDF, 0x1DE0, 0x1DE1,
+		0x1DE2, 0x1DE3, 0x1DE4, 0x1DE5, 0x1DE6, 0x1DFE, 0x20D0, 0x20D1, 0x20D4, 0x20D5, 0x20D6, 0x20D7,
+		0x20DB, 0x20DC, 0x20E1, 0x20E7, 0x20E9, 0x20F0, 0x2CEF, 0x2CF0, 0x2CF1, 0x2DE0, 0x2DE1, 0x2DE2,
+		0x2DE3, 0x2DE4, 0x2DE5, 0x2DE6, 0x2DE7, 0x2DE8, 0x2DE9, 0x2DEA, 0x2DEB, 0x2DEC, 0x2DED, 0x2DEE,
+		0x2DEF, 0x2DF0, 0x2DF1, 0x2DF2, 0x2DF3, 0x2DF4, 0x2DF5, 0x2DF6, 0x2DF7, 0x2DF8, 0x2DF9, 0x2DFA,
+		0x2DFB, 0x2DFC, 0x2DFD, 0x2DFE, 0x2DFF, 0xA66F, 0xA67C, 0xA67D, 0xA6F0, 0xA6F1, 0xA8E0, 0xA8E1,
+		0xA8E2, 0xA8E3, 0xA8E4, 0xA8E5, 0xA8E6, 0xA8E7, 0xA8E8, 0xA8E9, 0xA8EA, 0xA8EB, 0xA8EC, 0xA8ED,
+		0xA8EE, 0xA8EF, 0xA8F0, 0xA8F1, 0xAAB0, 0xAAB2, 0xAAB3, 0xAAB7, 0xAAB8, 0xAABE, 0xAABF, 0xAAC1,
+		0xFE20, 0xFE21, 0xFE22, 0xFE23, 0xFE24, 0xFE25, 0xFE26, 0x10A0F, 0x10A38, 0x1D185, 0x1D186, 0x1D187,
+		0x1D188, 0x1D189, 0x1D1AA, 0x1D1AB, 0x1D1AC, 0x1D1AD, 0x1D242, 0x1D243, 0x1D244,
+	}
+	local function diacritic(n)
+		return vim.fn.nr2char(ROWCOL_DIACRITICS[(n % #ROWCOL_DIACRITICS) + 1], true)
+	end
+	local PH = "\xF4\x8E\xBB\xAE"
+	local function get_image_dimensions(path)
+		local f = io.open(path, "rb")
+		if not f then return nil, nil end
+		local header = f:read(24)
+		if not header then f:close(); return nil, nil end
+		if header:sub(2, 4) == "PNG" then
+			f:close()
+			local w = string.byte(header, 17) * 16777216 + string.byte(header, 18) * 65536 + string.byte(header, 19) * 256 + string.byte(header, 20)
+			local h = string.byte(header, 21) * 16777216 + string.byte(header, 22) * 65536 + string.byte(header, 23) * 256 + string.byte(header, 24)
+			return w, h
+		end
+		if string.byte(header, 1) == 0xFF and string.byte(header, 2) == 0xD8 then
+			f:seek("set", 2)
+			local data = f:read("*a")
+			f:close()
+			local i = 1
+			while i < #data do
+				if string.byte(data, i) ~= 0xFF then
+					i = i + 1
+				else
+					local marker = string.byte(data, i + 1)
+					if marker == 0xC0 or marker == 0xC1 or marker == 0xC2 or marker == 0xC3 then
+						local h = string.byte(data, i + 5) * 256 + string.byte(data, i + 6)
+						local w = string.byte(data, i + 7) * 256 + string.byte(data, i + 8)
+						return w, h
+					elseif marker == 0xD9 or marker == 0xDA then
+						break
+					else
+						local len = string.byte(data, i + 2) * 256 + string.byte(data, i + 3)
+						i = i + 2 + len
+					end
+				end
+			end
+		end
+		f:close()
+		return nil, nil
+	end
+	local function transmit(id, path, cols, rows)
+		local key = id .. ":" .. cols .. "x" .. rows
+		if transmitted[key] then return end
+		local b64 = vim.base64.encode(vim.fn.fnamemodify(path, ":p")):gsub("%-", "/")
+		local chunks = {}
+		for i = 1, #b64, 4096 do
+			table.insert(chunks, b64:sub(i, i + 4095))
+		end
+		for i, chunk in ipairs(chunks) do
+			local ctrl
+			if i == 1 then
+				ctrl = string.format("a=t,f=100,t=f,i=%d,q=2,U=1,C=1,m=%d", id, (#chunks > 1 and 1 or 0))
+			else
+				ctrl = string.format("m=%d", (i == #chunks) and 0 or 1)
+			end
+			write("\x1b_G" .. ctrl .. ";" .. chunk .. "\x1b\\")
+			uv.sleep(1)
+		end
+		transmitted[key] = true
+		local control_p = string.format("a=p,i=%d,p=%d,c=%d,r=%d,q=2,U=1,C=1", id, id, cols, rows)
+		write("\x1b_G" .. control_p .. "\x1b\\")
+	end
+	local function refresh(buf)
+		if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].filetype ~= "markdown" then return end
+		vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+		local win = vim.fn.bufwinid(buf)
+		if win == -1 then return end
+		local win_info = vim.fn.getwininfo(win)[1]
+		if not win_info then return end
+		local available_width = win_info.width - win_info.textoff
+		local max_cols = math.max(10, available_width - 2)
+		local max_rows = 20
+		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+		local total_lines = #lines
+		for i, line in ipairs(lines) do
+			local target_path = nil
+			local local_p = line:match('%-%-%s*LOAD_IMAGE%s*=%s*"([^"]+)"%s*%-%-')
+			if local_p then
+				if local_p:match("^https?://") then
+					target_path = fetch_remote_image(local_p)
+				else
+					target_path = vim.fn.expand(local_p)
+				end
+			end
+			if target_path and vim.fn.filereadable(target_path) == 1 then
+				local id = image_ids[target_path]
+				if not id then
+					id = next_id
+					next_id = next_id + 1
+					image_ids[target_path] = id
+				end
+				local hl = ensure_hl(id)
+				local w, h = get_image_dimensions(target_path)
+				local cols, rows
+				if w and h and w > 0 and h > 0 then
+					local aspect = w / h
+					rows = math.floor(max_cols / (aspect * 2))
+					if rows > max_rows then rows = max_rows end
+					cols = math.floor(rows * aspect * 2)
+					if cols > max_cols then
+						cols = max_cols
+						rows = math.floor(cols / (aspect * 2))
+					end
+				else
+					cols = max_cols
+					rows = max_rows
+				end
+				cols, rows = math.max(1, cols), math.max(1, rows)
+				local png_path = prepare_image(target_path)
+				if png_path and vim.fn.filereadable(png_path) == 1 then
+					transmit(id, png_path, cols, rows)
+					local virt = {}
+					for r = 0, rows - 1 do
+						local row_d = diacritic(r)
+						local cells = {}
+						for c = 0, cols - 1 do
+							cells[#cells + 1] = PH .. row_d .. diacritic(c)
+						end
+						virt[#virt + 1] = { { table.concat(cells), hl } }
+					end
+					vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { end_col = #line, conceal = "" })
+					local draw_above = (i >= total_lines)
+					vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { 
+						virt_lines = virt, 
+						virt_lines_above = draw_above 
+					})
+				end
+			end
+		end
+	end
+	local group = vim.api.nvim_create_augroup("LoadImageKitty", { clear = true })
+	vim.api.nvim_create_autocmd(
+		{ "BufReadPost", "BufEnter", "BufWritePost", "TextChanged", "InsertLeave" }, {
+		group = group,
+		pattern = { "*.md", "*.markdown" },
+		callback = function(ev)
+			vim.schedule(function() pcall(refresh, ev.buf) end)
+		end,
+	})
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		group = group,
+		callback = function() if tty_file then pcall(function() tty_file:close() end) end end,
+	})
 end
-vim.api.nvim_create_user_command('ViewImage', function(opts)
-    local file_path = vim.fn.expand(opts.args)
-    if vim.fn.filereadable(file_path) == 0 then
-        vim.notify("Error: File not found", vim.log.levels.ERROR)
-        return
-    end
-    local escaped_path = vim.fn.shellescape(file_path)
-    if vim.fn.filereadable(chafa_bin) == 1 then
-        local cmd = string.format("%s -c full -f kitty --scale 1.0 %s > /dev/tty", vim.fn.shellescape(chafa_bin), escaped_path)
-        vim.fn.system(cmd)
-        return
-    end
-    vim.notify("[Bootstrap] Chafa engine not found. Compiling from source asynchronously...")
-    local temp_clone_dir = dir .. "/tmp_clone_chafa"
-    local compile_cmd = string.format(
-        "rm -rf '%s' && mkdir -p '%s' && wget https://hpjansson.org -P '%s' && tar -xf '%s/chafa-1.18.3.tar.xz' -C '%s' && cd '%s/chafa-1.18.3' && ./configure --prefix='%s' --disable-doc && make -j$(nproc 2>/dev/null || echo 2) && make install && rm -rf '%s'",
-        temp_clone_dir, temp_clone_dir, temp_clone_dir, temp_clone_dir, temp_clone_dir, temp_clone_dir, dir, temp_clone_dir
-    )
-    vim.fn.jobstart(compile_cmd, {
-        on_exit = function(_, exit_code)
-            if exit_code == 0 then
-                vim.notify("[Bootstrap] Chafa successfully compiled! Re-run :ViewImage now.")
-            else
-                vim.notify("[Bootstrap] Chafa compilation failed (exit code " .. exit_code .. ")", vim.log.levels.ERROR)
-            end
-        end
-    })
-end, { nargs = 1, complete = 'file' })
-
-local function bootstrap_image_deps()
-    vim.schedule(function()
-        ensure_imagemagick()
-        ensure_ueberzugpp()
-    end)
-end
-bootstrap_image_deps()
-
-local load_image_ns = vim.api.nvim_create_namespace("load_image_md")
-local chafa_fg_hl = {
-    [30] = "ChafaFgBlack",       [31] = "ChafaFgRed",
-    [32] = "ChafaFgGreen",       [33] = "ChafaFgYellow",
-    [34] = "ChafaFgBlue",        [35] = "ChafaFgMagenta",
-    [36] = "ChafaFgCyan",        [37] = "ChafaFgWhite",
-    [90] = "ChafaFgBrightBlack", [91] = "ChafaFgBrightRed",
-    [92] = "ChafaFgBrightGreen", [93] = "ChafaFgBrightYellow",
-    [94] = "ChafaFgBrightBlue",  [95] = "ChafaFgBrightMagenta",
-    [96] = "ChafaFgBrightCyan",  [97] = "ChafaFgBrightWhite",
-}
-
-local function setup_chafa_highlights()
-    local hl = vim.api.nvim_set_hl
-    hl(0, "ChafaFgBlack",         { fg = "#0F111A" })
-    hl(0, "ChafaFgRed",           { fg = "#F7768E" })
-    hl(0, "ChafaFgGreen",         { fg = "#9ECE6A" })
-    hl(0, "ChafaFgYellow",        { fg = "#E0AF68" })
-    hl(0, "ChafaFgBlue",          { fg = "#7AA2F7" })
-    hl(0, "ChafaFgMagenta",       { fg = "#BB9AF7" })
-    hl(0, "ChafaFgCyan",          { fg = "#7DCFFF" })
-    hl(0, "ChafaFgWhite",         { fg = "#C0CAF5" })
-    hl(0, "ChafaFgBrightBlack",   { fg = "#3B4261" })
-    hl(0, "ChafaFgBrightRed",     { fg = "#F7768E" })
-    hl(0, "ChafaFgBrightGreen",   { fg = "#9ECE6A" })
-    hl(0, "ChafaFgBrightYellow",  { fg = "#E0AF68" })
-    hl(0, "ChafaFgBrightBlue",    { fg = "#7AA2F7" })
-    hl(0, "ChafaFgBrightMagenta", { fg = "#BB9AF7" })
-    hl(0, "ChafaFgBrightCyan",    { fg = "#7DCFFF" })
-    hl(0, "ChafaFgBrightWhite",   { fg = "#C0CAF5" })
-end
-setup_chafa_highlights()
-
-local function parse_load_image(line)
-    return line:match('%-%-%s*LOAD_IMAGE%s*=%s*"([^"]+)"%s*%-%-')
-end
-local function parse_chafa_line(line)
-    local chunks = {}
-    local current_hl = "Normal"
-    local buf = {}
-    local i = 1
-    while i <= #line do
-        local s, e = line:find("\27%[([%d;]*)m", i)
-        if s == i then
-            if #buf > 0 then
-                table.insert(chunks, { table.concat(buf), current_hl })
-                buf = {}
-            end
-            local code = line:sub(s + 2, e - 1)
-            local num = tonumber(code:match("^(%d+)"))
-            if num == 0 or num == nil then
-                current_hl = "Normal"
-            elseif chafa_fg_hl[num] then
-                current_hl = chafa_fg_hl[num]
-            end
-            i = e + 1
-        else
-            local stop = s and (s - 1) or #line
-            table.insert(buf, line:sub(i, stop))
-            i = stop + 1
-        end
-    end
-    if #buf > 0 then
-        table.insert(chunks, { table.concat(buf), current_hl })
-    end
-    return chunks
-end
-
-local function chafa_lines_chunks(path, width, height)
-    local bin = vim.fn.filereadable(chafa_bin) == 1 and chafa_bin or "chafa"
-    if not is_exe(bin) and vim.fn.filereadable(chafa_bin) == 0 then
-        return {}
-    end
-    local cmd = string.format(
-        "%s --colors 8 --fg-only --format symbols --size %dx%d %s 2>/dev/null",
-        vim.fn.shellescape(bin), width, height, vim.fn.shellescape(path)
-    )
-    local out = vim.fn.systemlist(cmd)
-    local result = {}
-    for _, line in ipairs(out) do
-        table.insert(result, parse_chafa_line(line))
-    end
-    return result
-end
-
-local function refresh_load_images(buf)
-    if not vim.api.nvim_buf_is_valid(buf) then return end
-    if vim.bo[buf].filetype ~= "markdown" then return end
-    vim.api.nvim_buf_clear_namespace(buf, load_image_ns, 0, -1)
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local win_width = vim.api.nvim_win_get_width(0)
-    local max_width = math.max(20, win_width - 8)
-    for i, line in ipairs(lines) do
-        local path = parse_load_image(line)
-        if path and vim.fn.filereadable(path) == 1 then
-            local img = chafa_lines_chunks(path, max_width, 30)
-            local opts = { conceal_lines = "" }
-            if #img > 0 then
-                opts.virt_lines = img
-                opts.virt_lines_above = false
-            end
-            vim.api.nvim_buf_set_extmark(buf, load_image_ns, i - 1, 0, opts)
-        end
-    end
-end
-
-LoadImageGI = vim.api.nvim_create_augroup("LoadImageHook", { clear = true })
-vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost", "TextChanged", "InsertLeave" }, {
-    group = LoadImageGI,
-    pattern = { "*.md", "*.markdown" },
-    callback = function(ev)
-        if vim.bo[ev.buf].filetype == "markdown" then
-            vim.schedule(function()
-                refresh_load_images(ev.buf)
-            end)
-        end
-    end,
-})
-vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
-    group = LoadImageGI,
-    pattern = "*",
-    callback = function()
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-            if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
-                refresh_load_images(buf)
-            end
-        end
-    end,
-})
 
 
 -- Keymaps
