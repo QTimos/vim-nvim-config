@@ -2068,13 +2068,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
 	end,
 })
 vim.keymap.set("i", "<C-n>", function()
-	vim.lsp.completion.get()
-end)
-vim.keymap.set("i", "<C-n>", function()
 	if vim.fn.pumvisible() == 1 then
 		return "<C-n>"
+	else
+		vim.lsp.completion.get()
 	end
-	return "<C-n>"
 end, { expr = true })
 vim.keymap.set("i", "<Tab>", function()
 	if vim.fn.pumvisible() == 1 then
