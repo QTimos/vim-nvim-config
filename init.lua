@@ -265,11 +265,11 @@ function MidnightNexus()
 
 	-- Markdown
 	highlight(0, "markdownH1", { fg = colors.red, bold = true })
-	highlight(0, "markdownH2", { fg = colors.orange, bold = true })
-	highlight(0, "markdownH3", { fg = colors.yellow, bold = true })
+	highlight(0, "markdownH2", { fg = colors.magenta, bold = true })
+	highlight(0, "markdownH3", { fg = colors.pink, bold = true })
 	highlight(0, "markdownH4", { fg = colors.green, bold = true })
 	highlight(0, "markdownH5", { fg = colors.cyan, bold = true })
-	highlight(0, "markdownH6", { fg = colors.magenta, bold = true })
+	highlight(0, "markdownH6", { fg = colors.orange, bold = true })
 	highlight(0, "markdownHeadingDelimiter", { fg = colors.grey })
 	highlight(0, "markdownBold", { fg = colors.orange, bold = true })
 	highlight(0, "markdownItalic", { fg = colors.yellow, italic = true })
@@ -1639,13 +1639,14 @@ vim.api.nvim_create_autocmd({"FileType"}, {
 			red = "#F7768E", green = "#9ECE6A", yellow = "#E0AF68",
 			blue = "#7AA2F7", magenta = "#BB9AF7", cyan = "#7DCFFF",
 			orange = "#FFB86C", grey = "#3B4261", bg_alt = "#171B26",
+			pink = "#F5C2E7",
 		}
 		highlight(0, "@markup.heading.1", { fg = colors.red,     bold = true })
-		highlight(0, "@markup.heading.2", { fg = colors.orange,  bold = true })
-		highlight(0, "@markup.heading.3", { fg = colors.yellow,  bold = true })
+		highlight(0, "@markup.heading.2", { fg = colors.magenta,  bold = true })
+		highlight(0, "@markup.heading.3", { fg = colors.pink,  bold = true })
 		highlight(0, "@markup.heading.4", { fg = colors.green,   bold = true })
 		highlight(0, "@markup.heading.5", { fg = colors.cyan,    bold = true })
-		highlight(0, "@markup.heading.6", { fg = colors.magenta, bold = true })
+		highlight(0, "@markup.heading.6", { fg = colors.orange, bold = true })
 		highlight(0, "@markup.strong", { fg = colors.orange, bold = true })
 		highlight(0, "@markup.italic", { fg = colors.yellow, italic = true })
 		highlight(0, "@markup.raw", { fg = colors.green, bg = colors.bg_alt })
