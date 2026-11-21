@@ -2419,9 +2419,9 @@ if is_kitty then
 	local function ensure_hl(id)
 		local name = "KittyImg" .. id
 		if vim.fn.hlexists(name) == 0 then
-			local r = (id >> 16) & 0xFF
-			local g = (id >> 8) & 0xFF
-			local b = id & 0xFF
+			local r = math.floor(id / 65536) % 256
+			local g = math.floor(id / 256) % 256
+			local b = id % 256
 			vim.api.nvim_set_hl(0, name, {
 				fg = string.format("#%02x%02x%02x", r, g, b),
 				bg = "NONE",
