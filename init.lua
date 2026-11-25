@@ -527,6 +527,37 @@ local function print_table(items)
 		print(value.."\n")
 	end
 end
+local function with_job_progress(title, start_fn)
+  local width = 20
+  local bar_len = 5
+  local pos = 0
+  local dir = 1
+  local timer = vim.uv.new_timer()
+  local function render()
+    local left = string.rep("-", pos)
+    local block = string.rep("#", bar_len)
+    local right = string.rep("-", width - bar_len - pos)
+    local msg = string.format("%s [%s%s%s]", title, left, block, right)
+    vim.api.nvim_echo({ { msg, "None" } }, false, {})
+
+    pos = pos + dir
+    if pos + bar_len >= width or pos <= 0 then
+      dir = -dir
+    end
+  end
+  local function done(final_msg, level)
+    if timer and not timer:is_closing() then
+      timer:stop()
+      timer:close()
+    end
+    vim.api.nvim_echo({ { "", "None" } }, false, {})
+    if final_msg then
+      vim.notify(final_msg, level or vim.log.levels.INFO)
+    end
+  end
+  timer:start(0, 80, vim.schedule_wrap(render))
+  start_fn(done)
+end
 
 
 -- 42 header pattern
@@ -2025,23 +2056,24 @@ function BootstrapAndStart(server, bufnr)
 		vim.notify("[Bootstrap] "..server.name.." not found and has no auto-install (install manually)", vim.log.levels.WARN)
 		return
 	end
-	vim.notify("[Bootstrap] Installing "..server.name.."...")
-	vim.fn.jobstart(server.install_cmd, {
+	with_job_progress("[Bootstrap] Installing " .. server.name, function(done)
+	  vim.fn.jobstart(server.install_cmd, {
 		cwd = BinDir,
 		on_exit = function(_, code)
-			if code == 0 then
-				vim.notify("[Bootstrap] "..server.name.." installed")
-				vim.lsp.start({
-					name = server.name,
-					cmd = server.lsp_cmd,
-					filetypes = server.filetypes,
-					root_dir = vim.fs.root(bufnr, server.root_markers),
-				})
-			else
-				vim.notify("[Bootstrap] failed to install "..server.name, vim.log.levels.ERROR)
-			end
+		  if code == 0 then
+			done("[Bootstrap] " .. server.name .. " installed")
+			vim.lsp.start({
+				name = server.name,
+				cmd = server.lsp_cmd,
+				filetypes = server.filetypes,
+				root_dir = vim.fs.root(bufnr, server.root_markers),
+			})
+		  else
+			done("[Bootstrap] failed to install " .. server.name, vim.log.levels.ERROR)
+		  end
 		end,
-	})
+	  })
+	end)
 end
 vim.api.nvim_create_autocmd("FileType", {
 	group = LSPBootstrapV,
@@ -2701,6 +2733,45 @@ end, { silent = true })
 vim.keymap.set("n", "<CR>", "za", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>qa", ":qa!<CR>", { silent = true })
 vim.keymap.set("t", "<Leader>qa", "<C-\\><C-n>:qa!<CR>", { silent = true })
+
+
+vim.keymap.set("n", "<Leader>s", ":%s/\\<<C-r><C-w>\\>//gI<Left><Left><Left>", { silent = true })
+vim.keymap.set("x", "<leader>s", [["vy:%s/\V<C-r>=escape(@v, '/\')<CR>//g<Left><Left>]], { silent = true })
+vim.keymap.set("n", "<Leader>S", ":s/\\<<C-r><C-w>\\>//gI<Left><Left><Left>", { silent = true })
+vim.keymap.set("x", "<leader>S", [["vy:s/\V<C-r>=escape(@v, '/\')<CR>//<Left><Left>]], { silent = true })
+
+local function visual_wrap(left, right)
+	return function()
+		local m = vim.api.nvim_get_mode().mode
+		local map = {
+			v = "c" .. left .. '<C-r>"' .. right .. "<Esc>",
+			V = [[:s/\%V.*\%V/]] .. left .. "&" .. right .. [[/g<CR>]],
+			["\22"] = "c" .. left .. '<C-r>"' .. right .. "<Esc>",
+		}
+		return map[m]
+	end
+end
+
+vim.keymap.set("n", '<Leader>"', ':s/\\<<C-r><C-w>\\>/"<C-r><C-w>"/ <CR>')
+vim.keymap.set("x", '<leader>"', visual_wrap('"', '"'), { expr = true, silent = true })
+
+vim.keymap.set("n", "<Leader>'", ":s/\\<<C-r><C-w>\\>/'<C-r><C-w>'/ <CR>")
+vim.keymap.set("x", "<leader>'", visual_wrap("'", "'"), { expr = true, silent = true })
+
+vim.keymap.set("n", "<Leader>{", ":s/\\<<C-r><C-w>\\>/{<C-r><C-w>}/ <CR>")
+vim.keymap.set("x", "<leader>{", visual_wrap("{", "}"), { expr = true, silent = true })
+vim.keymap.set("n", "<Leader>}", ":s/\\<<C-r><C-w>\\>/{<C-r><C-w>}/ <CR>")
+vim.keymap.set("x", "<leader>}", visual_wrap("{", "}"), { expr = true, silent = true })
+
+vim.keymap.set("n", "<Leader>(", ":s/\\<<C-r><C-w>\\>/(<C-r><C-w>)/ <CR>")
+vim.keymap.set("x", "<leader>(", visual_wrap("(", ")"), { expr = true, silent = true })
+vim.keymap.set("n", "<Leader>)", ":s/\\<<C-r><C-w>\\>/(<C-r><C-w>)/ <CR>")
+vim.keymap.set("x", "<leader>)", visual_wrap("(", ")"), { expr = true, silent = true })
+
+vim.keymap.set("n", "<Leader>[", ":s/\\<<C-r><C-w>\\>/[<C-r><C-w>]/ <CR>")
+vim.keymap.set("x", "<leader>[", visual_wrap("[", "]"), { expr = true, silent = true })
+vim.keymap.set("n", "<Leader>]", ":s/\\<<C-r><C-w>\\>/[<C-r><C-w>]/ <CR>")
+vim.keymap.set("x", "<leader>]", visual_wrap("[", "]"), { expr = true, silent = true })
 
 
 
