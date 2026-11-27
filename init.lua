@@ -1,3 +1,801 @@
+local unpack = table.unpack or unpack
+-- Helpers
+local Helpers = {}
+function Helpers.get_os()
+	if Helpers._os_cache then
+		return Helpers._os_cache.os, Helpers._os_cache.arch, Helpers._os_cache
+	end
+	local raw_os, raw_arch, raw_release, raw_version = "", "", "", ""
+	local uv = vim and (vim.uv or vim.loop)
+	if uv and uv.os_uname then
+		local uname = uv.os_uname()
+		raw_os      = uname.sysname or ""
+		raw_arch    = uname.machine or ""
+		raw_release = uname.release or ""
+		raw_version = uname.version or ""
+	end
+	if jit then
+		if raw_os == "" then raw_os = jit.os or "" end
+		if raw_arch == "" then raw_arch = jit.arch or "" end
+	end
+	if raw_os == "" then
+		local sep = package and package.config and package.config:sub(1, 1)
+		if sep == "\\" or (os and os.getenv and (os.getenv("WINDIR") or os.getenv("COMSPEC"))) then
+			raw_os = "windows"
+		elseif os and os.getenv and os.getenv("OSTYPE") then
+			raw_os = os.getenv("OSTYPE") or ""
+		else
+			local cpath = package and package.cpath or ""
+			if cpath:match("%.dll") then raw_os = "windows"
+			elseif cpath:match("%.dylib") then raw_os = "mac"
+			elseif cpath:match("%.so") then raw_os = "linux" end
+		end
+	end
+	if raw_arch == "" and os and os.getenv then
+		raw_arch = os.getenv("PROCESSOR_ARCHITEW6432")
+			or os.getenv("PROCESSOR_ARCHITECTURE")
+			or os.getenv("HOSTTYPE")
+			or ""
+	end
+	local norm_os   = raw_os:lower()
+	local norm_arch = raw_arch:lower()
+	local exact_os = {
+		windows = "Windows", windows_nt = "Windows", win32 = "Windows", win64 = "Windows",
+		linux   = "Linux",
+		darwin  = "Mac", mac = "Mac", macos = "Mac", osx = "Mac",
+		freebsd = "BSD", openbsd = "BSD", netbsd = "BSD",
+		sunos   = "Solaris",
+	}
+	local exact_arch = {
+		x86_64 = "x86_64", ["x86-64"] = "x86_64", amd64 = "x86_64", x64 = "x86_64",
+		i386 = "x86", i486 = "x86", i586 = "x86", i686 = "x86", x86 = "x86",
+		aarch64 = "arm64", arm64 = "arm64",
+		arm = "arm",
+		ppc64 = "ppc64", ppc64le = "ppc64le",
+		riscv64 = "riscv64",
+	}
+	local os_name   = exact_os[norm_os]
+	local arch_name = exact_arch[norm_arch]
+	if not os_name and norm_os ~= "" then
+		local os_patterns = {
+			{ pat = "^windows", val = "Windows" },
+			{ pat = "^mingw",   val = "Windows" },
+			{ pat = "^cygwin",  val = "Windows" },
+			{ pat = "^msys",    val = "Windows" },
+			{ pat = "bsd$",     val = "BSD" },
+		}
+		for _, rule in ipairs(os_patterns) do
+			if norm_os:match(rule.pat) then
+				os_name = rule.val
+				break
+			end
+		end
+	end
+	if not arch_name and norm_arch ~= "" then
+		local arch_patterns = {
+			{ pat = "^aarch64", val = "arm64" },
+			{ pat = "^arm64",   val = "arm64" },
+			{ pat = "^armv",    val = "arm" },
+			{ pat = "^ppc64",   val = "ppc64" },
+			{ pat = "power",    val = "powerpc" },
+			{ pat = "^mips",    val = "mips" },
+		}
+		for _, rule in ipairs(arch_patterns) do
+			if norm_arch:match(rule.pat) then
+				arch_name = rule.val
+				break
+			end
+		end
+	end
+	os_name   = os_name or "unknown"
+	arch_name = arch_name or "unknown"
+	local is_wsl = false
+	if os_name == "Linux" then
+		local rel = raw_release:lower()
+		if rel:find("microsoft", 1, true) or rel:find("wsl", 1, true) or (os and os.getenv and os.getenv("WSL_DISTRO_NAME")) then
+			is_wsl = true
+		end
+	end
+	local ptr_bits, endian = nil, nil
+	local ok_ffi, ffi = pcall(require, "ffi")
+	if ok_ffi and ffi then
+		ptr_bits = ffi.sizeof("void*") * 8
+		endian   = ffi.abi("le") and "little" or "big"
+		if arch_name == "unknown" then
+			arch_name = (ptr_bits == 64) and "64bit_unknown" or "32bit_unknown"
+		end
+	end
+	local host_arch = arch_name
+	if os_name == "Mac" and arch_name == "x86_64" and raw_version:find("RELEASE_ARM64", 1, true) then
+		host_arch = "arm64"
+	elseif os_name == "Windows" and arch_name == "x86_64" and os and os.getenv then
+		local proc_id = (os.getenv("PROCESSOR_IDENTIFIER") or ""):lower()
+		if proc_id:find("arm", 1, true) then
+			host_arch = "arm64"
+		end
+	end
+	Helpers._os_cache = {
+		os        = os_name,
+		arch      = arch_name,
+		host_arch = host_arch,
+		is_wsl    = is_wsl,
+		ptr_bits  = ptr_bits,
+		endian    = endian,
+	}
+	return Helpers._os_cache.os, Helpers._os_cache.arch, Helpers._os_cache
+end
+function Helpers.split(str, sep)
+	if str == nil then return {} end
+	local parts = {}
+	if sep == nil then
+		for word in str:gmatch("%S+") do
+			parts[#parts + 1] = word
+		end
+		return parts
+	end
+	if sep == "" then
+		for i = 1, #str do
+			parts[#parts + 1] = str:sub(i, i)
+		end
+		return parts
+	end
+	local start_idx = 1
+	local sep_len = #sep
+	while true do
+		local match_start = str:find(sep, start_idx, true)
+		if not match_start then
+			parts[#parts + 1] = str:sub(start_idx)
+			break
+		end
+		parts[#parts + 1] = str:sub(start_idx, match_start - 1)
+		start_idx = match_start + sep_len
+	end
+	return parts
+end
+function Helpers.substitute(str, from, to, flag)
+	if str == nil then return nil end
+	if not from or #from == 0 then return str end
+	to = to or ""
+	local res = {}
+	local start_idx = 1
+	local from_len = #from
+	local global = (flag == "g")
+	while true do
+		local match_start = str:find(from, start_idx, true)
+		if not match_start then
+			res[#res + 1] = str:sub(start_idx)
+			break
+		end
+		res[#res + 1] = str:sub(start_idx, match_start - 1)
+		res[#res + 1] = to
+		start_idx = match_start + from_len
+		if not global then
+			res[#res + 1] = str:sub(start_idx)
+			break
+		end
+	end
+	return table.concat(res)
+end
+function Helpers.replace_char(str, chars, to, flag)
+	if str == nil then return nil end
+	if not chars or #chars == 0 then return str end
+	to = to or ""
+	local utf8_char = "[%z\1-\127\194-\244][\128-\191]*"
+	local lookup = {}
+	for cp in chars:gmatch(utf8_char) do
+		lookup[cp] = true
+	end
+	local res = {}
+	local global = (flag == "g")
+	local replaced = false
+	for cp in str:gmatch(utf8_char) do
+		if (global or not replaced) and lookup[cp] then
+			res[#res + 1] = to
+			replaced = true
+		else
+			res[#res + 1] = cp
+		end
+	end
+	return table.concat(res)
+end
+function Helpers.contains(str, sub)
+	if str == nil or sub == nil then return false end
+	return str:find(sub, 1, true) ~= nil
+end
+function Helpers.index_of(list, value)
+	for i, v in ipairs(list) do
+		if v == value then
+			return i
+		end
+	end
+	return nil
+end
+function Helpers.in_list(value, list)
+	return Helpers.index_of(list, value) ~= nil
+end
+function Helpers.with_job_progress(title, start_fn)
+	local width = 20
+	local bar_len = math.min(5, width)
+	local pos = 0
+	local dir = 1
+	local finished = false
+	local timer = vim.uv.new_timer()
+	local function cleanup(clear_echo)
+		if finished then return end
+		finished = true
+		if timer and not timer:is_closing() then
+			timer:stop()
+			timer:close()
+		end
+		if clear_echo then
+			vim.api.nvim_echo({ { "", "None" } }, false, {})
+		end
+	end
+	local function render()
+		if finished then return end
+		local left = string.rep("-", pos)
+		local block = string.rep("#", bar_len)
+		local right = string.rep("-", math.max(0, width - bar_len - pos))
+		local msg = string.format("%s [%s%s%s]", title, left, block, right)
+		local max_cols = math.max(1, (vim.o.columns or 80) - 12)
+		if #msg > max_cols then
+			msg = msg:sub(1, max_cols)
+		end
+		vim.api.nvim_echo({ { msg, "None" } }, false, {})
+		pos = pos + dir
+		if pos + bar_len >= width or pos <= 0 then
+			dir = -dir
+		end
+	end
+	local function done(final_msg, level)
+		vim.schedule(function()
+			cleanup(final_msg == nil)
+			if final_msg then
+				vim.notify(final_msg, level or vim.log.levels.INFO)
+			end
+		end)
+	end
+	timer:start(0, 80, vim.schedule_wrap(render))
+	local ok, err = pcall(start_fn, done)
+	if not ok then
+		cleanup(false)
+		vim.notify(string.format("%s failed: %s", title, tostring(err)), vim.log.levels.ERROR)
+	end
+end
+local function is_windows_host()
+	if SYS and SYS.is_win ~= nil then return SYS.is_win end
+	return Helpers.get_os() == "Windows"
+end
+local function is_root_path(norm)
+	if norm == "/"
+		or norm:match("^[A-Za-z]:/?$") ~= nil
+		or norm:match("^//[%?%.]/?$") ~= nil
+		or norm:match("^//[%?%.]/[A-Za-z]:/?$") ~= nil
+		or norm:match("^//%?/UNC/?$") ~= nil
+		or norm:match("^//%?/UNC/[^/]+/?$") ~= nil
+		or norm:match("^//%?/UNC/[^/]+/[^/]+/?$") ~= nil
+		or norm:match("^//%?/GLOBALROOT") ~= nil
+		or norm:match("^//[^/]+/?$") ~= nil
+		or norm:match("^//[^/]+/[^/]+/?$") ~= nil then
+		return true
+	end
+	if norm:match("^//%./") ~= nil and norm:match("^//%./[A-Za-z]:/") == nil then
+		return true
+	end
+	return false
+end
+function Helpers.join_path(...)
+	local args = {}
+	for i = 1, select("#", ...) do
+		local v = select(i, ...)
+		if v and v ~= "" then
+			args[#args + 1] = v
+		end
+	end
+	if #args == 0 then return "" end
+	return Helpers.norm_path(vim.fs.joinpath(unpack(args)))
+end
+function Helpers.resolve_path(path)
+	local norm = Helpers.norm_path(path)
+	if norm == "" then return "" end
+	local real = vim.uv.fs_realpath(norm)
+	return real and Helpers.norm_path(real) or norm
+end
+function Helpers.is_valid_filename(name)
+	if not name or name == "" or name == "." or name == ".." or name:find("%z") or name:find("/", 1, true) then
+		return false, "Invalid name."
+	end
+	if is_windows_host() then
+		if name:find("\\", 1, true) or name:match('[<>:"|?*\1-\31]') or name:match("[%s%.]+$") then
+			return false, "Invalid Windows filename characters, separator, or trailing dot/space."
+		end
+		local base = name:lower():match("^([^%.]+)")
+		if base and (base == "con" or base == "prn" or base == "aux" or base == "nul"
+			or base:match("^com[0-9]$") or base:match("^lpt[0-9]$")) then
+			return false, "Reserved Windows device name: " .. name
+		end
+	end
+	return true
+end
+function Helpers.stat(path)
+	if not path or path == "" then return nil end
+	return vim.uv.fs_stat(path)
+end
+function Helpers.is_dir(path)
+	local st = Helpers.stat(path)
+	return st ~= nil and st.type == "directory"
+end
+function Helpers.exists(path)
+	return Helpers.stat(path) ~= nil
+end
+function Helpers.mkdir_p(path)
+	local norm = Helpers.norm_path(path)
+	if norm == "" then return false, "Empty path." end
+	if Helpers.is_dir(norm) then return true end
+	if is_root_path(norm) then
+		return false, "Root path unavailable: " .. norm
+	end
+	local parent = Helpers.norm_path(vim.fs.dirname(norm))
+	if parent ~= "" and parent ~= norm then
+		local ok, err = Helpers.mkdir_p(parent)
+		if not ok then return false, err end
+	end
+	local ok, err = vim.uv.fs_mkdir(norm, 493) -- 0755
+	if not ok and not Helpers.is_dir(norm) then
+		return false, err
+	end
+	return true
+end
+function Helpers.rm_rf(path)
+	local norm = Helpers.norm_path(path)
+	if norm == "" then return false, "Empty path." end
+	if is_root_path(norm) then
+		return false, "Refusing to remove root path: " .. norm
+	end
+	local lst = vim.uv.fs_lstat(norm)
+	if not lst then return true end
+	local win = is_windows_host()
+	if lst.type ~= "directory" then
+		if win then
+			pcall(vim.uv.fs_chmod, norm, 438) -- 0666: clear read-only bit (e.g., .git objects)
+		end
+		local ok, err = vim.uv.fs_unlink(norm)
+		if not ok and win and lst.type == "link" then
+			return vim.uv.fs_rmdir(norm)
+		end
+		return ok, err
+	end
+	local req, scan_err = vim.uv.fs_scandir(norm)
+	if not req then
+		pcall(vim.uv.fs_chmod, norm, 493) -- 0755 retry if directory lacked read/exec
+		req, scan_err = vim.uv.fs_scandir(norm)
+		if not req then return false, scan_err end
+	end
+	while true do
+		local name = vim.uv.fs_scandir_next(req)
+		if not name then break end
+		local ok, err = Helpers.rm_rf(Helpers.join_path(norm, name))
+		if not ok then return false, err end
+	end
+	pcall(vim.uv.fs_chmod, norm, win and 511 or 493)
+	return vim.uv.fs_rmdir(norm)
+end
+function Helpers.norm_path(path)
+	if type(path) ~= "string" or path == "" then return "" end
+	local p = vim.fs.normalize(path)
+	if p:match("^/+$") then
+		return "/"
+	end
+	if p:match("^[A-Za-z]:$") or p:match("^//[%?%.]/[A-Za-z]:$") then
+		return p .. "/"
+	end
+	if p == "/"
+		or p:match("^[A-Za-z]:/$")
+		or p:match("^//[%?%.]/[A-Za-z]:/$") then
+		return p
+	end
+	return (p:gsub("/+$", ""))
+end
+function Helpers.touch(path)
+	local norm = Helpers.norm_path(path)
+	if norm == "" then return false, "Empty path." end
+	if is_root_path(norm) then
+		return false, "Cannot touch root path: " .. norm
+	end
+	local sec, usec = vim.uv.gettimeofday()
+	if not sec then return false, usec end
+	local now = sec + (usec / 1e6)
+	if Helpers.stat(norm) ~= nil then
+		local ok, err = vim.uv.fs_utime(norm, now, now)
+		if not ok then return false, err end
+		return true
+	end
+	local parent = Helpers.norm_path(vim.fs.dirname(norm))
+	if parent ~= "" and not Helpers.is_dir(parent) then
+		local ok, err = Helpers.mkdir_p(parent)
+		if not ok then return false, err end
+	end
+	local fd, err = vim.uv.fs_open(norm, "a", 420) -- 0644, non-truncating
+	if not fd then return false, err end
+	pcall(vim.uv.fs_futime, fd, now, now)
+	vim.uv.fs_close(fd)
+	return true
+end
+function Helpers.is_list(tbl)
+	if type(tbl) ~= "table" then return false end
+	if vim and vim.islist then
+		return vim.islist(tbl)
+	end
+	local count = 0
+	local k = next(tbl)
+	while k ~= nil do
+		if type(k) ~= "number" or k < 1 or k % 1 ~= 0 then
+			return false
+		end
+		count = count + 1
+		k = next(tbl, k)
+	end
+	for i = 1, count do
+		if rawget(tbl, i) == nil then
+			return false
+		end
+	end
+	return true
+end
+local function safe_tostring(val)
+	local ok, str = pcall(tostring, val)
+	str = ok and str or ("<" .. type(val) .. ">")
+	return (str:gsub("%z", "\\000"))
+end
+local function safe_quote(str)
+	return (string.format("%q", str):gsub("%z", "\\000"))
+end
+function Helpers.print_list(list, indent, visited)
+	indent = math.max(0, indent or 0)
+	if type(list) ~= "table" then
+		print(string.rep("  ", indent) .. safe_tostring(list))
+		return
+	end
+	visited = visited or {}
+	if visited[list] then
+		print(string.rep("  ", indent) .. "<cycle>")
+		return
+	end
+	visited[list] = true
+	if indent == 0 then
+		print("[")
+	end
+	for index, value in ipairs(list) do
+		local item_padding = string.rep("  ", indent + 1)
+		if type(value) == "table" then
+			print(item_padding .. "[" .. index .. "] = {")
+			Helpers.print_table(value, indent + 2, visited)
+			print(item_padding .. "}")
+		elseif type(value) == "string" then
+			print(item_padding .. safe_quote(value))
+		else
+			print(item_padding .. safe_tostring(value))
+		end
+	end
+	if indent == 0 then
+		print("]")
+	end
+	visited[list] = nil
+end
+function Helpers.print_table(table_obj, indent, visited)
+	indent = math.max(0, indent or 0)
+	visited = visited or {}
+	local padding = string.rep("  ", indent)
+	if type(table_obj) ~= "table" then
+		print(padding .. safe_tostring(table_obj))
+		return
+	end
+	if visited[table_obj] then
+		print(padding .. "<cycle>")
+		return
+	end
+	visited[table_obj] = true
+	if Helpers.is_list(table_obj) and next(table_obj) ~= nil then
+		for _, value in ipairs(table_obj) do
+			if type(value) == "table" then
+				print(padding .. "{")
+				Helpers.print_table(value, indent + 1, visited)
+				print(padding .. "}")
+			elseif type(value) == "string" then
+				print(padding .. safe_quote(value))
+			else
+				print(padding .. safe_tostring(value))
+			end
+		end
+		visited[table_obj] = nil
+		return
+	end
+	local empty = true
+	for key, value in pairs(table_obj) do
+		empty = false
+		local formatted_key = type(key) == "string"
+			and ("[" .. safe_quote(key) .. "]")
+			or ("[" .. safe_tostring(key) .. "]")
+		if type(value) == "table" then
+			print(padding .. formatted_key .. " = {")
+			Helpers.print_table(value, indent + 1, visited)
+			print(padding .. "}")
+		elseif type(value) == "string" then
+			print(padding .. formatted_key .. " = " .. safe_quote(value))
+		else
+			print(padding .. formatted_key .. " = " .. safe_tostring(value))
+		end
+	end
+	if indent == 0 and empty then
+		print("{}")
+	end
+	visited[table_obj] = nil
+end
+function Helpers.download_from_url(url, opts, cb)
+	local PY_SCRIPT = [[
+    import sys, json, urllib.request, urllib.error
+    url, out, timeout = sys.argv[1], sys.argv[2], float(sys.argv[3])
+    headers = dict(json.load(sys.stdin))
+    class Https(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            if not newurl.lower().startswith("https://"):
+                raise urllib.error.URLError("refusing non-https redirect: " + newurl)
+            return urllib.request.HTTPRedirectHandler.redirect_request(
+                self, req, fp, code, msg, hdrs, newurl)
+    opener = urllib.request.build_opener(Https)
+    req = urllib.request.Request(url, headers=headers)
+    with opener.open(req, timeout=timeout) as r, open(out, "wb") as f:
+        while True:
+            chunk = r.read(65536)
+            if not chunk:
+                break
+            f.write(chunk)
+	]]
+	PY_SCRIPT = ("\n" .. PY_SCRIPT):gsub("\n    ", "\n"):sub(2)
+	local function tail(s)
+		s = vim.trim(s or "")
+		local lines = vim.split(s, "\n", { plain = true, trimempty = true })
+		local line = (s:find("Traceback", 1, true) and lines[#lines]) or lines[1] or ""
+		return #line > 300 and (line:sub(1, 300) .. "...") or line
+	end
+	if type(cb) ~= "function" then
+		error("download_from_url: cb must be a function", 2)
+	end
+	opts = opts or {}
+	local timeout_ms = opts.timeout or 30000
+	local secs = math.max(1, math.floor(timeout_ms / 1000))
+	local outpath = opts.outpath
+	if outpath == "" then outpath = nil end
+	local want_string = outpath == nil
+	local part_path = outpath and (outpath .. ".part") or vim.fn.tempname()
+	local called = false
+	local function done(err, body)
+		if called then return end
+		called = true
+		if err or want_string then pcall(vim.uv.fs_unlink, part_path) end
+		if err then
+			cb(err)
+		elseif want_string then
+			cb(nil, body)
+		else
+			cb(nil, outpath)
+		end
+	end
+	local function fail_async(msg)
+		vim.schedule(function() done(msg) end)
+	end
+	if type(url) ~= "string" or not url:lower():match("^https://") then
+		return fail_async("only https:// URLs are supported: " .. tostring(url))
+	end
+	local hdr = {}
+	for k, v in pairs(opts.headers or {}) do
+		k, v = tostring(k), tostring(v)
+		if k == "" or k:find("[:\r\n]") or v:find("[\r\n]") then
+			return fail_async("invalid header: " .. k)
+		end
+		hdr[#hdr + 1] = { k, v }
+	end
+	table.sort(hdr, function(a, b) return a[1] < b[1] end)
+	local native_headers = {}
+	for _, h in ipairs(hdr) do native_headers[h[1]] = h[2] end
+	local parent = vim.fn.fnamemodify(part_path, ":h")
+	if vim.fn.isdirectory(parent) == 0 then
+		pcall(vim.fn.mkdir, parent, "p")
+		if vim.fn.isdirectory(parent) == 0 then
+			return fail_async("Cannot create directory: " .. parent)
+		end
+	end
+	local function finish()
+		if want_string then
+			local f = io.open(part_path, "rb")
+			if not f then return done("cannot read downloaded file") end
+			local data = f:read("*a")
+			f:close()
+			return done(nil, data or "")
+		end
+		local ok, err = vim.uv.fs_rename(part_path, outpath)
+		if not ok then
+			return done("cannot move download into place: " .. tostring(err))
+		end
+		done(nil)
+	end
+	local tiers = {}
+	local function add(name, start) tiers[#tiers + 1] = { name = name, start = start } end
+	local function run_process(cmd, stdin, on_done)
+		local ok, spawn_err = pcall(vim.system, cmd,
+			{ text = true, stdin = stdin, timeout = timeout_ms + 1000 },
+			vim.schedule_wrap(function(res)
+				if res.code == 0 then return on_done(nil) end
+				local why
+				if res.code == nil or (res.signal or 0) ~= 0 then
+					why = "timed out"
+				else
+					why = string.format("exit %d: %s", res.code, tail(res.stderr))
+				end
+				on_done(why)
+			end))
+		if not ok then
+			on_done("spawn failed (" .. tail(tostring(spawn_err)) .. ")")
+		end
+	end
+	add("curl", function(on_done)
+		local bin = vim.fn.exepath("curl")
+		if bin == "" then return "not found" end
+		local cmd = {
+			bin, "-fsSL",
+			"--proto", "=https", "--proto-redir", "=https",
+			"--connect-timeout", tostring(math.min(15, secs)),
+			"--max-time", tostring(secs),
+		}
+		for _, h in ipairs(hdr) do
+			vim.list_extend(cmd, { "-H", h[1] .. ": " .. h[2] })
+		end
+		vim.list_extend(cmd, { "-o", part_path, url })
+		run_process(cmd, nil, on_done)
+	end)
+	add("wget", function(on_done)
+		local bin = vim.fn.exepath("wget")
+		if bin == "" then return "not found" end
+		local cmd = { bin, "-q", "-T", tostring(secs) }
+		for _, h in ipairs(hdr) do
+			vim.list_extend(cmd, { "--header", h[1] .. ": " .. h[2] })
+		end
+		vim.list_extend(cmd, { "-O", part_path, url })
+		run_process(cmd, nil, on_done)
+	end)
+	add("fetch", function(on_done)
+		local bin = vim.fn.exepath("fetch")
+		if bin == "" then return "not found" end
+		if #hdr > 0 then return "cannot send custom headers" end
+		run_process({ bin, "-q", "-T", tostring(secs), "-o", part_path, url }, nil, on_done)
+	end)
+	if vim.fn.has("win32") == 1 then
+		add("powershell", function(on_done)
+			local bin = vim.fn.exepath("powershell.exe")
+			if bin == "" then bin = vim.fn.exepath("pwsh") end
+			if bin == "" then return "not found" end
+			local function q(s) return "'" .. (tostring(s):gsub("'", "''")) .. "'" end
+			local parts = {
+				"$ErrorActionPreference='Stop'",
+				"$ProgressPreference='SilentlyContinue'",
+				"try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12}catch{}",
+				"$h=@{}",
+			}
+			for _, h in ipairs(hdr) do
+				parts[#parts + 1] = string.format("$h[%s]=%s", q(h[1]), q(h[2]))
+			end
+			parts[#parts + 1] = string.format(
+				"Invoke-WebRequest -Uri %s -Headers $h -OutFile %s -UseBasicParsing -TimeoutSec %d",
+				q(url), q(part_path), secs)
+			run_process({ bin, "-NoProfile", "-NonInteractive", "-Command", table.concat(parts, ";") }, nil, on_done)
+		end)
+	end
+	add("python", function(on_done)
+		local bin = vim.fn.exepath("python3")
+		if bin == "" then bin = vim.fn.exepath("python") end
+		if bin == "" then return "not found" end
+		run_process({ bin, "-c", PY_SCRIPT, url, part_path, tostring(secs) }, vim.json.encode(hdr), on_done)
+	end)
+	add("vim.net.request", function(on_done)
+		if not (vim.net and vim.net.request) then return "not available" end
+		local settled = false
+		local function finish_once(err)
+			if settled then return end
+			settled = true
+			on_done(err)
+		end
+		local ok, job_or_err = pcall(vim.net.request, "GET", url, {
+			headers = native_headers,
+			outpath = part_path,
+		}, vim.schedule_wrap(function(err, res)
+			if err then
+				finish_once(string.format("status %s: %s", res and res.status or "?", tostring(err)))
+			else
+				finish_once(nil)
+			end
+		end))
+		if not ok then return "spawn failed (" .. tail(tostring(job_or_err)) .. ")" end
+		local job = job_or_err
+		local timer = vim.uv.new_timer()
+		if timer then
+			timer:start(timeout_ms, 0, vim.schedule_wrap(function()
+				pcall(function() timer:stop(); timer:close() end)
+				if not settled then
+					pcall(function() job:close() end)
+					finish_once("timed out")
+				end
+			end))
+		end
+	end)
+	local errors = {}
+	local function run(i)
+		if called then return end
+		local tier = tiers[i]
+		if not tier then
+			return done("all downloaders failed:\n  " .. table.concat(errors, "\n  "))
+		end
+		local reported = false
+		local function on_done(err)
+			if reported then return end
+			reported = true
+			if err == nil then
+				local ok, ferr = pcall(finish)
+				if not ok then
+					errors[#errors + 1] = tier.name .. ": finish() failed: " .. tail(tostring(ferr))
+					pcall(vim.uv.fs_unlink, part_path)
+					return run(i + 1)
+				end
+				return
+			end
+			errors[#errors + 1] = tier.name .. ": " .. err
+			pcall(vim.uv.fs_unlink, part_path)
+			run(i + 1)
+		end
+		local skip = tier.start(on_done)
+		if skip then
+			errors[#errors + 1] = tier.name .. ": skipped (" .. skip .. ")"
+			run(i + 1)
+		end
+	end
+	vim.schedule(function() run(1) end)
+end
+_G.Helpers = Helpers
+
+
+-- Getting the os and architecture
+local os_name, arch_name, os_info = Helpers.get_os()
+local is_win   = (os_name == "Windows")
+local is_mac   = (os_name == "Mac")
+local is_linux = (os_name == "Linux")
+local is_bsd   = (os_name == "BSD")
+local SYS = {
+	os        = os_name,
+	arch      = arch_name,
+	host_arch = os_info.host_arch,
+	ptr_bits  = os_info.ptr_bits,
+	endian    = os_info.endian,
+	is_win    = is_win,
+	is_mac    = is_mac,
+	is_linux  = is_linux,
+	is_bsd    = is_bsd,
+	is_wsl    = os_info.is_wsl,
+	is_unix   = (is_linux or is_mac or is_bsd),
+	exe_ext   = is_win and ".exe" or "",
+	lib_ext   = is_win and ".dll" or (is_mac and ".dylib" or ".so"),
+	path_sep  = is_win and ";" or ":",
+	dir_sep   = is_win and "\\" or "/",
+}
+_G.SYS = SYS
+
+
+-- Bin directory for all external tools
+BinDir = vim.fn.stdpath("config").."/bin"
+
+
+
+
+
+
 vim.g.mapleader = " "
 vim.g.localleader = " "
 vim.g.markdown_syntax_conceal = 1
@@ -32,9 +830,6 @@ vim.opt.cursorline = true
 vim.opt.colorcolumn = "80"
 vim.opt.list = true
 vim.opt.listchars = { tab = "»-", trail = "·", extends = "›", precedes = "‹" }
-
--- Bin directory for all external tools
-BinDir = vim.fn.stdpath("config").."/bin"
 
 -- Colorscheme- Midnight Nexus
 vim.highlight.priorities.semantic_tokens = 0
@@ -334,450 +1129,601 @@ function MidnightNexus()
 	highlight(0, "netrwClassify", { fg = colors.grey })
 end
 
+
 -- File skeletons
-function C_skeleton()
-	local bufnbr = vim.api.nvim_get_current_buf()
-	local filetype = vim.bo[bufnbr].filetype
-	if filetype ~= "c" then
-		print("You are not in a C file!!")
-		return
-	end
-	local lines = {
-		"#include <stdio.h>",
-		"#include <stdlib.h>",
-		"",
-		"",
-		"int main(int argc, char **argv)",
-		"{",
-		"	return (0);",
-		"}"
-	}
-	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
+local Skeletons = {
+	ext_map = {
+		c = "c",
+		h = "h",
+		cpp = "cpp",
+		cc = "cpp",
+		cxx = "cpp",
+		hpp = "hpp",
+		hh = "hpp",
+		hxx = "hpp",
+		py = "python",
+		css = "css",
+		html = "html",
+		htm = "html",
+		rs = "rust",
+		go = "go",
+		lua = "lua",
+		vim = "vim",
+	},
+}
+function Skeletons.make_header_guard(file_name, fallback_name)
+	local base = (file_name ~= "" and vim.fs.basename(file_name)) or fallback_name
+	return base:upper():gsub("[^A-Z0-9]", "_")
 end
-vim.api.nvim_create_user_command("Cskell", C_skeleton, {})
-function PY_skeleton()
-	local bufnbr = vim.api.nvim_get_current_buf()
-	local filetype = vim.bo[bufnbr].filetype
-	if filetype ~= "python" then
-		print("You are not in a python file!!")
-		return
+Skeletons.templates = {
+	c = {
+		cursor_pos = { 7, 1 },
+		lines = {
+			"#include <stdio.h>",
+			"#include <stdlib.h>",
+			"",
+			"",
+			"int main(int argc, char **argv)",
+			"{",
+			"\t",
+			"\treturn (0);",
+			"}",
+		},
+	},
+	cpp = {
+		cursor_pos = { 5, 1 },
+		lines = {
+			"#include <iostream>",
+			"",
+			"int main(int argc, char **argv)",
+			"{",
+			"\t",
+			"\treturn 0;",
+			"}",
+		},
+	},
+	h = function(file_name)
+		local guard = Skeletons.make_header_guard(file_name, "HEADER_H")
+		return {
+			cursor_pos = { 4, 0 },
+			lines = {
+				"#ifndef " .. guard,
+				"# define " .. guard,
+				"",
+				"",
+				"#endif",
+			},
+		}
+	end,
+	hpp = function(file_name)
+		local guard = Skeletons.make_header_guard(file_name, "HEADER_HPP")
+		return {
+			cursor_pos = { 4, 0 },
+			lines = {
+				"#ifndef " .. guard,
+				"#define " .. guard,
+				"",
+				"",
+				"#endif // " .. guard,
+			},
+		}
+	end,
+	rust = {
+		cursor_pos = { 2, 1 },
+		lines = {
+			"fn main() {",
+			"\t",
+			"}",
+		},
+	},
+	go = {
+		cursor_pos = { 6, 1 },
+		lines = {
+			"package main",
+			"",
+			'import "fmt"',
+			"",
+			"func main() {",
+			"\t",
+			'\t_ = fmt.Sprint("")',
+			"}",
+		},
+	},
+	lua = {
+		cursor_pos = { 4, 1 },
+		lines = {
+			"local M = {}",
+			"",
+			"function M.setup()",
+			"\t",
+			"end",
+			"",
+			"return M",
+		},
+	},
+	vim = {
+		cursor_pos = { 3, 0 },
+		lines = {
+			'" Vim script',
+			"scriptencoding utf-8",
+			"",
+			"",
+		},
+	},
+	python = {
+		cursor_pos = { 4, 4 },
+		lines = {
+			"",
+			"",
+			"def main() -> None:",
+			"    raise NotImplementedError()",
+			"",
+			"",
+			'if __name__ == "__main__":',
+			"    main()",
+		},
+	},
+	css = {
+		cursor_pos = { 2, 12 },
+		lines = {
+			":root {",
+			"\t--primary: ;",
+			"\t--secondary: ;",
+			"\t--bg-body: ;",
+			"\t--text-main: ;",
+			"\t--font-body: ;",
+			"\t--font-heading: ;",
+			"\t--radius: ;",
+			"\t--container-width: ;",
+			"}",
+			"",
+			"*, *::before, *::after {",
+			"\tbox-sizing: border-box;",
+			"}",
+			"",
+			"* {",
+			"\tmargin: 0;",
+			"\tpadding: 0;",
+			"}",
+			"",
+			"html {",
+			"\t-webkit-text-size-adjust: none;",
+			"\ttext-size-adjust: none;",
+			"\tscroll-behavior: smooth;",
+			"\theight: 100%;",
+			"}",
+			"",
+			"body {",
+			"\tmin-height: 100vh;",
+			"\tline-height: 1.5;",
+			"\t-webkit-font-smoothing: antialiased;",
+			"\t-moz-osx-font-smoothing: grayscale;",
+			"\ttext-rendering: optimizeSpeed;",
+			"}",
+			"",
+			"img, picture, video, canvas, svg {",
+			"\tdisplay: block;",
+			"\tmax-width: 100%;",
+			"\theight: auto;",
+			"}",
+			"",
+			"input, button, textarea, select {",
+			"\tfont: inherit;",
+			"}",
+			"",
+			"ul, ol {",
+			"\tlist-style: none;",
+			"}",
+			"",
+			'button, [type="button"], [type="submit"] {',
+			"\tcursor: pointer;",
+			"}",
+			"",
+			"@media (prefers-reduced-motion: reduce) {",
+			"\t*, *::before, *::after {",
+			"\t\tanimation-duration: 0.01ms !important;",
+			"\t\tanimation-iteration-count: 1 !important;",
+			"\t\ttransition-duration: 0.01ms !important;",
+			"\t\tscroll-behavior: auto !important;",
+			"\t}",
+			"}",
+		},
+	},
+	html = {
+		cursor_pos = { 9, 1 },
+		lines = {
+			"<!DOCTYPE html>",
+			'<html lang="en">',
+			"<head>",
+			'\t<meta charset="UTF-8">',
+			'\t<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+			"\t<title>Page Title</title>",
+			"</head>",
+			"<body>",
+			"\t",
+			"</body>",
+			"</html>",
+		},
+	},
+}
+function Skeletons.get_template(bufnr, file_name)
+	local lower_name = file_name:lower()
+	local ext = vim.fn.fnamemodify(lower_name, ":e")
+	local mapped_ext = Skeletons.ext_map[ext]
+	local key = (mapped_ext == "h" or mapped_ext == "hpp") and mapped_ext or nil
+	if not key then
+		local ft = vim.bo[bufnr].filetype
+		key = (ft and ft ~= "" and Skeletons.templates[ft]) and ft or mapped_ext
 	end
-	local lines = {
-		"",
-		"",
-		"def main() -> None:",
-		"    raise NotImplementedError()",
-		"",
-		"",
-		"if __name__ == \"__main__\":",
-		"    main()"
-	}
-	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
+	local tpl = key and Skeletons.templates[key] or nil
+	if type(tpl) == "function" then
+		return tpl(file_name), key
+	end
+	return tpl, key or vim.bo[bufnr].filetype
 end
-vim.api.nvim_create_user_command("PYskell", PY_skeleton, {})
-function CSS_skeleton()
-	local bufnbr = vim.api.nvim_get_current_buf()
-	local filetype = vim.bo[bufnbr].filetype
-	if filetype ~= "css" then
-		print("You are not in a css file!!")
-		return
-	end
-	local lines = {
-		":root {",
-		"	--primary: ;",
-		"	--secondary: ;",
-		"	--bg-body: ;",
-		"	--text-main: ;",
-		"	--font-body: ;",
-		"	--font-heading: ;",
-		"	--radius: ;",
-		"	--container-width: ;",
-		"}",
-		"",
-		"*, *::before, *::after {",
-		"	box-sizing: border-box;",
-		"}",
-		"",
-		"* {",
-		"	margin: 0;",
-		"	padding: 0;",
-		"}",
-		"",
-		"html {",
-		"	-webkit-text-size-adjust: none;",
-		"	text-size-adjust: none;",
-		"	scroll-behavior: smooth;",
-		"	height: 100%;",
-		"}",
-		"",
-		"body {",
-		"	min-height: 100vh;",
-		"	line-height: 1.5;",
-		"	-webkit-font-smoothing: antialiased;",
-		"	-moz-osx-font-smoothing: grayscale;",
-		"	text-rendering: optimizeSpeed;",
-		"}",
-		"",
-		"img, picture, video, canvas, svg {",
-		"	display: block;",
-		"	max-width: 100%;",
-		"	height: auto;",
-		"}",
-		"",
-		"input, button, textarea, select {",
-		"	font: inherit;",
-		"}",
-		"",
-		"ul, ol {",
-		"	list-style: none;",
-		"}",
-		"",
-		"button, [type=\"button\"], [type=\"submit\"] {",
-		"	cursor: pointer;",
-		"}",
-		"",
-		"@media (prefers-reduced-motion: reduce) {",
-		"	*, *::before, *::after {",
-		"		animation-duration: 0.01ms !important;",
-		"		animation-iteration-count: 1 !important;",
-		"		transition-duration: 0.01ms !important;",
-		"		scroll-behavior: auto !important;",
-		"	}",
-		"}"
-	}
-	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
-end
-vim.api.nvim_create_user_command("CSSskel", CSS_skeleton, {})
-function HTML_skeleton()
-	local bufnbr = vim.api.nvim_get_current_buf()
-	local filetype = vim.bo[bufnbr].filetype
-	if filetype ~= "html" then
-		print("You are not in an html file!!")
-		return
-	end
-	local lines = {
-		"<!DOCTYPE html>",
-		"<html lang=\"en\">",
-		"<head>",
-		"	<meta charset=\"UTF-8\">",
-		"	<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
-		"	<title>Page Title</title>",
-		"</head>",
-		"<body>",
-		"	",
-		"</body>",
-		"</html>"
-	}
-	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
-end
-vim.api.nvim_create_user_command("HTMLskel", HTML_skeleton, {})
-
-
--- Helpers
-local function split(string, sep)
-	local parts = {}
-	if sep == nil or sep == "" or sep == {} then
-		sep = "%s"
-	end
-	for str in string.gmatch(string, "([^"..sep.."]+)") do
-		table.insert(parts, str)
-	end
-	return parts
-end
-local function substitute(string, from, to, flag)
-	local stop = false
-	local new_string = ""
-	for char in string:gmatch(".") do
-		if char == from and stop == false then
-			if flag ~= "g" then
-				stop = true
-			end
-			new_string = new_string..to
-		else
-			new_string = new_string..char
-		end
-	end
-	return new_string
-end
-local function strstr(string, sub)
-	local s, _ = string.find(string, sub, 1, true)
-	if s == nil then
+function Skeletons.is_buffer_empty(bufnr)
+	if vim.api.nvim_buf_line_count(bufnr) ~= 1 then
 		return false
 	end
-	return true
+	local first_line = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1]
+	return first_line == nil or first_line == ""
 end
--- local function table_index(table, value)
--- 	for i, v in ipairs(table) do
--- 		if v == value then
--- 			return i
--- 		end
--- 	end
--- 	return nil
--- end
-local function in_list(var, items)
-	for _, value in ipairs(items) do
-		if value == var then
-			return true
+function Skeletons.insert_for_current_buf()
+	local bufnr = vim.api.nvim_get_current_buf()
+	if not vim.bo[bufnr].modifiable then
+		vim.notify("Buffer is not modifiable.", vim.log.levels.ERROR)
+		return
+	end
+	if not Skeletons.is_buffer_empty(bufnr) then
+		vim.notify("Buffer is not empty; skipping skeleton.", vim.log.levels.WARN)
+		return
+	end
+	local file_name = vim.api.nvim_buf_get_name(bufnr)
+	local tpl, key = Skeletons.get_template(bufnr, file_name)
+	if not tpl then
+		local display_key = (key and key ~= "") and key or "none"
+		vim.notify(("No skeleton defined for '%s'."):format(display_key), vim.log.levels.WARN)
+		return
+	end
+	vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, tpl.lines)
+	if tpl.cursor_pos then
+		local row, col = tpl.cursor_pos[1], tpl.cursor_pos[2]
+		local line = tpl.lines[row] or ""
+		if col >= #line then
+			vim.api.nvim_win_set_cursor(0, { row, 0 })
+			vim.cmd("startinsert!")
+		else
+			vim.api.nvim_win_set_cursor(0, { row, col })
+			vim.cmd("startinsert")
 		end
 	end
-	return false
 end
-local function print_table(items)
-	for _, value in ipairs(items) do
-		print(value.."\n")
-	end
-end
-local function with_job_progress(title, start_fn)
-  local width = 20
-  local bar_len = 5
-  local pos = 0
-  local dir = 1
-  local timer = vim.uv.new_timer()
-  local function render()
-    local left = string.rep("-", pos)
-    local block = string.rep("#", bar_len)
-    local right = string.rep("-", width - bar_len - pos)
-    local msg = string.format("%s [%s%s%s]", title, left, block, right)
-    vim.api.nvim_echo({ { msg, "None" } }, false, {})
-
-    pos = pos + dir
-    if pos + bar_len >= width or pos <= 0 then
-      dir = -dir
-    end
-  end
-  local function done(final_msg, level)
-    if timer and not timer:is_closing() then
-      timer:stop()
-      timer:close()
-    end
-    vim.api.nvim_echo({ { "", "None" } }, false, {})
-    if final_msg then
-      vim.notify(final_msg, level or vim.log.levels.INFO)
-    end
-  end
-  timer:start(0, 80, vim.schedule_wrap(render))
-  start_fn(done)
-end
+vim.keymap.set("n", "<Leader> <Esc>", function()   --KEYMAP: INSERT FILE TYPE SPESIFIC SKELETON
+		Skeletons.insert_for_current_buf()
+end, { silent = true, desc = "Insert filetype skeleton" })
 
 
 -- 42 header pattern
-USER = "hdyani"
-function Get_file_update_time_string(file)
-	if file == "" or file == nil then
-		return ""
+local Header42 = {
+	user = "hdyani",
+	mail_domain = "marvin@42.fr",
+	comments = {
+		c          = { left = "/*", right = "*/" },
+		cpp        = { left = "/*", right = "*/" },
+		objc       = { left = "/*", right = "*/" },
+		objcpp     = { left = "/*", right = "*/" },
+		java       = { left = "/*", right = "*/" },
+		javascript = { left = "/*", right = "*/" },
+		typescript = { left = "/*", right = "*/" },
+		css        = { left = "/*", right = "*/" },
+		scss       = { left = "/*", right = "*/" },
+		rust       = { left = "/*", right = "*/" },
+		go         = { left = "/*", right = "*/" },
+		php        = { left = "/*", right = "*/" },
+		make       = { left = "#",  right = "#"  },
+		cmake      = { left = "#",  right = "#"  },
+		sh         = { left = "#",  right = "#"  },
+		bash       = { left = "#",  right = "#"  },
+		zsh        = { left = "#",  right = "#"  },
+		python     = { left = "#",  right = "#"  },
+		ruby       = { left = "#",  right = "#"  },
+		perl       = { left = "#",  right = "#"  },
+		yaml       = { left = "#",  right = "#"  },
+		toml       = { left = "#",  right = "#"  },
+		dockerfile = { left = "#",  right = "#"  },
+		lua        = { left = "--", right = "--" },
+		sql        = { left = "--", right = "--" },
+		haskell    = { left = "--", right = "--" },
+		vim        = { left = '"',  right = '"'  },
+		tex        = { left = "%",  right = "%"  },
+		lisp       = { left = ";;", right = ";;" },
+	},
+}
+function Header42.get_comment_delims(bufnr, file_name)
+	local ft = vim.bo[bufnr].filetype
+	local pair = (ft and ft ~= "") and Header42.comments[ft] or nil
+	if pair then
+		return pair.left, pair.right
 	end
-	local success, open_file = pcall(io.open, file, "r")
-	if not success or not open_file then
-		return ""
+	local lower_name = file_name:lower()
+	if lower_name == "makefile" or lower_name == "gnumakefile" or lower_name:match("%.mk$") or lower_name == "dockerfile" or lower_name == "cmakelists.txt" then
+		return "#", "#"
 	end
-	local handle = io.popen("stat --format=%y "..file)
-	if handle == nil then
-		return
-	end
-	local raw = handle:read("*a")
-	handle:close()
-	if raw == "" or raw == {} or raw == nil then
-		return ""
-	end
-	local parts = split(raw)
-	if #parts < 2 then
-		return ""
-	end
-	local date = substitute(parts[1], "-", "/", "g")
-	local time = split(parts[2], ".")[1]
-	return "Updated: "..date.." "..time.." by "
-end
-function Get_file_creation_time_string(file)
-	if file == "" or file == nil then
-		return ""
-	end
-	local success, open_file = pcall(io.open, file, "r")
-	if not success or not open_file then
-		return ""
-	end
-	local handle = io.popen("stat --format=%w "..file)
-	if handle == nil then
-		return
-	end
-	local raw = handle:read("*a")
-	handle:close()
-	if raw == "" or raw == {} or raw == nil then
-		return ""
-	end
-	local parts = split(raw)
-	if #parts < 2 then
-		return ""
-	end
-	local date = substitute(parts[1], "-", "/", "g")
-	local time = split(parts[2], ".")[1]
-	return 'Created: '..date..' '..time..' by '
-end
-function Pad_username(user_name, base_spaces)
-	if #user_name > 9 then
-		return {string.sub(user_name, 1, 8), string.rep(" ", base_spaces)}
-	end
-	return {user_name, string.rep(" ", base_spaces + (9 - #user_name))}
-end
-function Get_filename_line(file_name)
-	local name = (#file_name > 41) and string.sub(file_name, 1, 40) or file_name
-	local spaces = string.rep(" ", 10 + (41 - #name))
-	return "/*   "..name..spaces..":+:      :+:    :+:   */"
-end
-function Get_mail_line(user_name)
-	local name, spaces = unpack(Pad_username(user_name, 19))  ---@diagnostic disable-line: deprecated
-	return "/*   By: "..name.." <marvin@42.fr>"..spaces.."+#+  +:+       +#+        */"
-end
-function Get_created_line(user_name, full_path)
-	local time_str = Get_file_creation_time_string(full_path)
-	if time_str == "" then
-		return ""
-	end
-	local name, spaces = unpack(Pad_username(user_name, 9))  ---@diagnostic disable-line: deprecated
-	return "/*   "..time_str..name..spaces.."#+#    #+#             */"
-end
-function Get_updated_line(user_name, full_path)
-	local time_str = Get_file_update_time_string(full_path)
-	if time_str == "" then
-		return ""
-	end
-	local name, spaces = unpack(Pad_username(user_name, 8))  ---@diagnostic disable-line: deprecated
-	return "/*   "..time_str..name..spaces.."###   ########.fr       */"
-end
-function Pattern_update()
-	local handle = io.popen("echo $USER")
-	if handle == nil then
-		return
-	end
-	local raw = handle:read("*a")
-	handle:close()
-	local user_name = (USER == "") and raw or USER
-	local full_path = vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0))
-	local file_name = vim.fs.basename(full_path)
-	if full_path == "" or full_path == nil then
-		return ""
-	end
-	local success, open_file = pcall(io.open, full_path, "r")
-	if not success or not open_file then
-		return
-	end
-	local mail_line = vim.fn.getline(6)
-	local created_line = vim.fn.getline(8)
-	local updated_line = vim.fn.getline(9)
-	if not strstr(mail_line, "By") or not strstr(created_line, "Created") or not strstr(updated_line, "Updated") then
-		return
-	end
-	local updated_line_str = Get_updated_line(user_name, full_path)
-	local filename_line_str = Get_filename_line(file_name)
-	if updated_line_str == "" or filename_line_str == "" then
-		return
-	end
-	vim.fn.setline(4, filename_line_str)
-	vim.fn.setline(9, updated_line_str)
-end
-function Forty_Two_pattern()
-	local handle = io.popen("echo $USER")
-	if handle == nil then
-		return
-	end
-	local raw = handle:read("*a")
-	handle:close()
-	local user_name = (USER == "") and raw or USER
-	local full_path = vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0))
-	local file_name = vim.fs.basename(full_path)
-	if file_name == "" or file_name == nil or full_path == "" or full_path == nil or user_name == "" or user_name == nil then
-		return
-	end
-	local success, open_file = pcall(io.open, full_path, "r")
-	if not success or not open_file then
-		print("File does not exist or is not readable!")
-		return
-	end
-	if vim.fn.fnamemodify(file_name, ":e") ~= "c" and vim.fn.fnamemodify(file_name, ":e") ~= "h" then
-		print("File is not a c file!!")
-		return
-	end
-	local mail_line = vim.fn.getline(6)
-	local created_line = vim.fn.getline(8)
-	local updated_line = vim.fn.getline(9)
-	if strstr(mail_line, "By") and strstr(created_line, "Created") and strstr(updated_line, "Updated") then
-		Pattern_update()
-	   	return
-	end
-	local filename_line_str = Get_filename_line(file_name)
-	local mail_line_str = Get_mail_line(user_name)
-	local created_line_str = Get_created_line(user_name, full_path)
-	local updated_line_str = Get_updated_line(user_name, full_path)
-	if filename_line_str == "" or mail_line_str == "" or created_line_str == "" or updated_line_str == "" then
-		print("Failed to generate header lines!")
-		return
-	end
-	local lines = {
-		'/* ************************************************************************** */',
-		'/*                                                                            */',
-		'/*                                                        :::      ::::::::   */',
-		filename_line_str,
-		'/*                                                    +:+ +:+         +:+     */',
-		mail_line_str,
-		'/*                                                +#+#+#+#+#+   +#+           */',
-		created_line_str,
-		updated_line_str,
-		'/*                                                                            */',
-		'/* ************************************************************************** */',
-		''
+	local ext = vim.fn.fnamemodify(lower_name, ":e")
+	local ext_map = {
+		c = "c", h = "c",
+		cpp = "cpp", hpp = "cpp", cc = "cpp", hh = "cpp", cxx = "cpp", hxx = "cpp",
+		m = "objc", mm = "objcpp",
+		py = "python", sh = "sh", bash = "bash", zsh = "zsh",
+		lua = "lua", vim = "vim", rs = "rust", go = "go",
+		js = "javascript", ts = "typescript", java = "java",
 	}
-	local bufnbr = vim.api.nvim_get_current_buf()
-	vim.api.nvim_buf_set_lines(bufnbr, 0, 0, false, lines)
+	local mapped_ft = ext_map[ext]
+	local mapped_pair = mapped_ft and Header42.comments[mapped_ft] or nil
+	if mapped_pair then
+		return mapped_pair.left, mapped_pair.right
+	end
+	return nil, nil
 end
-FtPatternMappingsGI = vim.api.nvim_create_augroup("FtPatternMappings", { clear = true })
-vim.api.nvim_create_autocmd({"BufWritePre"}, {
-	group = FtPatternMappingsGI,
+function Header42.wrap_line(inner, left, right)
+	local left_pad = left .. string.rep(" ", 5 - #left)
+	local right_pad = string.rep(" ", 5 - #right) .. right
+	return left_pad .. inner .. right_pad
+end
+function Header42.border_line(left, right)
+	local left_pad = left .. " "
+	local right_pad = " " .. right
+	local stars = string.rep("*", 80 - #left_pad - #right_pad)
+	return left_pad .. stars .. right_pad
+end
+function Header42.get_user()
+	if Header42.user and Header42.user ~= "" then
+		return Header42.user
+	end
+	local uv = vim.uv or vim.loop
+	if uv and uv.os_get_passwd then
+		local ok, passwd = pcall(uv.os_get_passwd)
+		if ok and passwd and passwd.username and passwd.username ~= "" then
+			return passwd.username
+		end
+	end
+	return os.getenv("USER") or os.getenv("USERNAME") or "marvin"
+end
+function Header42.format_time(sec)
+	return os.date("%Y/%m/%d %H:%M:%S", sec or os.time())
+end
+function Header42.get_file_times(path, use_now_for_update)
+	local now = os.time()
+	local created_sec = now
+	local updated_sec = now
+	if path and path ~= "" then
+		local uv = vim.uv or vim.loop
+		local stat = uv.fs_stat(path)
+		if stat then
+			created_sec = (stat.birthtime and stat.birthtime.sec and stat.birthtime.sec > 0)
+				and stat.birthtime.sec
+				or (stat.ctime and stat.ctime.sec)
+				or (stat.mtime and stat.mtime.sec)
+				or now
+			updated_sec = use_now_for_update
+				and now
+				or ((stat.mtime and stat.mtime.sec) or now)
+		end
+	end
+	return "Created: " .. Header42.format_time(created_sec) .. " by ", "Updated: " .. Header42.format_time(updated_sec) .. " by "
+end
+function Header42.pad_username(user_name, base_spaces)
+	if #user_name > 9 then
+		return user_name:sub(1, 8), string.rep(" ", math.max(1, base_spaces))
+	end
+	return user_name, string.rep(" ", math.max(1, base_spaces + (9 - #user_name)))
+end
+function Header42.get_filename_line(file_name, left, right)
+	local name = (#file_name > 41) and file_name:sub(1, 40) or file_name
+	local spaces = string.rep(" ", 10 + (41 - #name))
+	return Header42.wrap_line(name .. spaces .. ":+:      :+:    :+:", left, right)
+end
+function Header42.get_mail_line(user_name, left, right)
+	local domain = Header42.mail_domain or "marvin@42.fr"
+	if #domain > 30 then
+		domain = domain:sub(1, 30)
+	end
+	local base_spaces = 19 + (12 - #domain)
+	local name, spaces = Header42.pad_username(user_name, base_spaces)
+	return Header42.wrap_line("By: " .. name .. " <" .. domain .. ">" .. spaces .. "+#+  +:+       +#+     ", left, right)
+end
+function Header42.get_created_line(user_name, created_prefix, left, right)
+	local name, spaces = Header42.pad_username(user_name, 9)
+	return Header42.wrap_line(created_prefix .. name .. spaces .. "#+#    #+#          ", left, right)
+end
+function Header42.get_updated_line(user_name, updated_prefix, left, right)
+	local name, spaces = Header42.pad_username(user_name, 8)
+	return Header42.wrap_line(updated_prefix .. name .. spaces .. "###   ########.fr    ", left, right)
+end
+function Header42.has_header(bufnr)
+	if vim.api.nvim_buf_line_count(bufnr) < 11 then
+		return false
+	end
+	local mail_line = vim.fn.getbufline(bufnr, 6)
+	local created_line = vim.fn.getbufline(bufnr, 8)
+	local updated_line = vim.fn.getbufline(bufnr, 9)
+	local unpack_fn = table.unpack or unpack
+	local m = unpack_fn(mail_line)
+	local c = unpack_fn(created_line)
+	local u = unpack_fn(updated_line)
+	return (m and m:find("By:", 1, true) ~= nil)
+		and (c and c:find("Created:", 1, true) ~= nil)
+		and (u and u:find("Updated:", 1, true) ~= nil)
+end
+function Header42.update(bufnr, force)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	if not force and not vim.bo[bufnr].modified then
+		return
+	end
+	if not Header42.has_header(bufnr) then
+		return
+	end
+	local buf_path = vim.api.nvim_buf_get_name(bufnr)
+	if buf_path == "" then
+		return
+	end
+	local uv = vim.uv or vim.loop
+	local full_path = uv.fs_realpath(buf_path) or buf_path
+	local file_name = vim.fs.basename(full_path)
+	local left, right = Header42.get_comment_delims(bufnr, file_name)
+	if not left or not right then
+		return
+	end
+	local _, updated_prefix = Header42.get_file_times(full_path, true)
+	local user_name = Header42.get_user()
+	local filename_line = Header42.get_filename_line(file_name, left, right)
+	local updated_line = Header42.get_updated_line(user_name, updated_prefix, left, right)
+	vim.api.nvim_buf_set_lines(bufnr, 3, 4, false, { filename_line })
+	vim.api.nvim_buf_set_lines(bufnr, 8, 9, false, { updated_line })
+end
+function Header42.insert_or_update()
+	local bufnr = vim.api.nvim_get_current_buf()
+	local buf_path = vim.api.nvim_buf_get_name(bufnr)
+	if buf_path == "" then
+		vim.notify("Buffer has no filename!", vim.log.levels.WARN)
+		return
+	end
+	local uv = vim.uv or vim.loop
+	local full_path = uv.fs_realpath(buf_path) or buf_path
+	local file_name = vim.fs.basename(full_path)
+	local left, right = Header42.get_comment_delims(bufnr, file_name)
+	if not left or not right then
+		vim.notify("Unsupported filetype for 42 header: " .. file_name, vim.log.levels.WARN)
+		return
+	end
+	if Header42.has_header(bufnr) then
+		Header42.update(bufnr, true)
+		return
+	end
+	local created_prefix, updated_prefix = Header42.get_file_times(full_path, true)
+	local user_name = Header42.get_user()
+	local lines = {
+		Header42.border_line(left, right),
+		Header42.wrap_line(string.rep(" ", 70), left, right),
+		Header42.wrap_line(string.rep(" ", 53) .. ":::      ::::::::", left, right),
+		Header42.get_filename_line(file_name, left, right),
+		Header42.wrap_line(string.rep(" ", 49) .. "+:+ +:+         +:+  ", left, right),
+		Header42.get_mail_line(user_name, left, right),
+		Header42.wrap_line(string.rep(" ", 45) .. "+#+#+#+#+#+   +#+        ", left, right),
+		Header42.get_created_line(user_name, created_prefix, left, right),
+		Header42.get_updated_line(user_name, updated_prefix, left, right),
+		Header42.wrap_line(string.rep(" ", 70), left, right),
+		Header42.border_line(left, right),
+		"",
+	}
+	vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, lines)
+end
+local header42_group = vim.api.nvim_create_augroup("Header42AutoUpdate", { clear = true })
+vim.api.nvim_create_autocmd("BufWritePre", {
+	group = header42_group,
 	pattern = "*",
-	callback = function()
-		Pattern_update()
+	callback = function(args)
+		Header42.update(args.buf, false)
 	end,
 })
+vim.keymap.set("n", "<Leader><Esc>", function() --KEYMAP: INSERT 42 HEADER
+	Header42.insert_or_update()
+end, { silent = true, desc = "Insert 42 header" })
 
 
 -- Netrw / file explorer
+local Netrw = {
+	cr_orig = nil,
+}
+local is_win_env = (SYS and SYS.is_win) or (Helpers.get_os() == "Windows")
 vim.g.netrw_liststyle = 3
-local netrw_cr_orig = nil
-local netrw_refresh_orig = nil
-local function is_tree_open()
-	for i = 1, vim.fn.winnr("$") do
-		if vim.fn.getwinvar(i, "&filetype") == "netrw" then
-			return i
+vim.g.netrw_banner = 0
+vim.g.netrw_keepdir = 0
+vim.g.netrw_browse_split = 4
+vim.g.netrw_sort_by = "name"
+vim.g.netrw_hide = 1
+if not vim.g.netrw_list_hide or vim.g.netrw_list_hide == "" then
+	vim.g.netrw_list_hide = [[\%(^\|\s\)\.\S\+]]
+end
+vim.g.netrw_localrmdir = is_win_env and "rmdir /s /q" or "rm -rf"
+function Netrw.target_width()
+	return math.max(15, math.floor(vim.o.columns * 0.15))
+end
+function Netrw.lock_width(win)
+	win = win or Netrw.is_tree_open()
+	if not win or not vim.api.nvim_win_is_valid(win) then return end
+	vim.wo[win].winfixwidth = true
+	if #vim.api.nvim_tabpage_list_wins(0) > 1 then
+		local wanted = Netrw.target_width()
+		if vim.api.nvim_win_get_width(win) ~= wanted then
+			pcall(vim.api.nvim_win_set_width, win, wanted)
+		end
+	end
+end
+local function validate_relative_subpath(rel_path)
+	local cleaned = rel_path:gsub("^[/\\]+", ""):gsub("[/\\]+$", "")
+	if cleaned == "" then
+		return false, "Path cannot consist solely of slashes."
+	end
+	for seg in cleaned:gmatch("[^/\\]+") do
+		local ok, err = Helpers.is_valid_filename(seg)
+		if not ok then
+			return false, err
+		end
+	end
+	return true
+end
+function Netrw.is_tree_open()
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		local buf = vim.api.nvim_win_get_buf(win)
+		if vim.bo[buf].filetype == "netrw" then
+			return win
 		end
 	end
 	return nil
 end
-local function TurnOffBanner(netrw_win)
+function Netrw.turn_off_banner(netrw_win)
+	if vim.g.netrw_banner == 0 then return end
 	vim.g.netrw_banner = 0
-	if vim.bo.filetype == 'netrw' then
+	if not vim.api.nvim_win_is_valid(netrw_win) then return end
+	local buf = vim.api.nvim_win_get_buf(netrw_win)
+	if vim.bo[buf].filetype == "netrw" then
 		vim.api.nvim_win_call(netrw_win, function()
 			vim.fn["netrw#Explore"](0, false, 0, "")
 		end)
 	end
 end
-local function Refresh_netrw(target_dir)
-	local tree_win = vim.api.nvim_get_current_win()
-	local root = target_dir or vim.w.netrw_treetop or vim.b.netrw_curdir
-	local saved_line = vim.api.nvim_win_get_cursor(tree_win)[1]
-	vim.fn["netrw#Explore"](0, false, 0, root)
-	if vim.api.nvim_win_is_valid(tree_win) then
-		vim.api.nvim_set_current_win(tree_win)
+function Netrw.refresh(target_dir)
+	local tree_win = Netrw.is_tree_open() or vim.api.nvim_get_current_win()
+	if not vim.api.nvim_win_is_valid(tree_win) then return end
+	vim.api.nvim_win_call(tree_win, function()
+		local root = vim.w.netrw_treetop or vim.b.netrw_curdir or target_dir
+		if not root or root == "" then return end
+		local saved_line = select(1, unpack(vim.api.nvim_win_get_cursor(tree_win)))
+		vim.fn["netrw#Explore"](0, false, 0, root)
 		local last_line = vim.api.nvim_buf_line_count(0)
-		local target_line = math.min(saved_line, last_line)
+		local target_line = math.max(1, math.min(saved_line, last_line))
 		vim.api.nvim_win_set_cursor(tree_win, { target_line, 0 })
+	end)
+end
+function Netrw.toggle_hidden_files()
+	if not vim.g.netrw_list_hide or vim.g.netrw_list_hide == "" then
+		vim.g.netrw_list_hide = [[\%(^\|\s\)\.\S\+]]
 	end
+	vim.g.netrw_hide = (vim.g.netrw_hide == 1) and 0 or 1
+	Netrw.refresh()
 end
-function Toggle_hidden_files()
-	vim.g.netrw_hide = vim.g.netrw_hide == 1 and 0 or 1
-	Refresh_netrw()
+function Netrw.get_root()
+	local raw = vim.w.netrw_treetop or vim.b.netrw_curdir
+	if not raw or raw == "" then return nil end
+	return Helpers.norm_path(raw)
 end
-local function Netrw_get_fullpath_under_cursor(target_lnum)
-	local base_dir = vim.w.netrw_treetop or vim.b.netrw_curdir
+function Netrw.get_fullpath_under_cursor(target_lnum, resolve)
+	if resolve == nil then resolve = true end
+	local base_dir = Netrw.get_root()
 	if not base_dir then return nil end
 	local depth_str = "| "
+	local classify = (vim.g.netrw_classify == nil or vim.g.netrw_classify ~= 0)
 	local function depth_and_name(line)
 		local d = 0
 		local rest = line
@@ -785,414 +1731,1085 @@ local function Netrw_get_fullpath_under_cursor(target_lnum)
 			d = d + 1
 			rest = rest:sub(#depth_str + 1)
 		end
-		rest = rest:gsub("^%d+/?%s*", "")
-		rest = rest:gsub("%s*%-%->.*$", "")
-		rest = rest:gsub("[/@%*=|]%s*$", "")
+		rest = rest:gsub("%s*%-+>.*$", "")
+		if classify then
+			rest = rest:gsub("[/@%*=|]%s*$", "")
+		end
 		return d, rest
 	end
-	local lnum = target_lnum or vim.fn.line(".")
-	local line_str = vim.fn.getline(lnum)
+	local lnum = target_lnum or select(1, unpack(vim.api.nvim_win_get_cursor(0)))
+	local line_str = table.concat(vim.api.nvim_buf_get_lines(0, lnum - 1, lnum, false))
 	local cur_depth, name = depth_and_name(line_str)
+	local raw_path
 	if name == ".." then
-		return vim.fn.fnamemodify(base_dir .. "/..", ":p")
-	end
-	if name == "" or cur_depth == 0 then
-		return vim.fn.fnamemodify(base_dir, ":p")
-	end
-	local parts = { name }
-	local want_depth = cur_depth
-	while want_depth > 1 and lnum > 1 do
-		lnum = lnum - 1
-		local d, n = depth_and_name(vim.fn.getline(lnum))
-		if d < want_depth and d > 0 then
-			table.insert(parts, 1, n)
-			want_depth = d
+		raw_path = Helpers.join_path(base_dir, "..")
+	elseif name == "" or cur_depth == 0 then
+		raw_path = base_dir
+	else
+		local parts = { name }
+		local want_depth = cur_depth
+		while want_depth > 1 and lnum > 1 do
+			lnum = lnum - 1
+			local prev_line = table.concat(vim.api.nvim_buf_get_lines(0, lnum - 1, lnum, false))
+			local d, n = depth_and_name(prev_line)
+			if d < want_depth and d > 0 then
+				table.insert(parts, 1, n)
+				want_depth = d
+			end
 		end
+		raw_path = Helpers.join_path(base_dir, table.concat(parts, "/"))
 	end
-	return vim.fn.fnamemodify(base_dir .. "/" .. table.concat(parts, "/"), ":p")
+	return resolve and Helpers.resolve_path(raw_path) or raw_path
 end
-function Enter_directory_under_cursor()
-	local target = Netrw_get_fullpath_under_cursor()
-	if vim.fn.isdirectory(target) == 0 then
-		return
+local function is_protected_path(path)
+	local root = Netrw.get_root()
+	if not path or not root then return true end
+	local parent = Helpers.join_path(root, "..")
+	return path == root or path == parent
+end
+local function invoke_orig_cr()
+	if Netrw.cr_orig and Netrw.cr_orig.callback then
+		Netrw.cr_orig.callback()
+	elseif Netrw.cr_orig and Netrw.cr_orig.rhs then
+		local keys = vim.api.nvim_replace_termcodes(Netrw.cr_orig.rhs, true, false, true)
+		vim.api.nvim_feedkeys(keys, "n", false)
 	end
+end
+function Netrw.enter_directory_under_cursor()
+	local target = Netrw.get_fullpath_under_cursor()
+	if not target or not Helpers.is_dir(target) then return end
 	local tree_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_win_call(tree_win, function()
 		vim.fn["netrw#SetTreetop"](1, target)
 	end)
 end
-function Open_file_tree()
+function Netrw.open_file_tree()
 	vim.g.netrw_banner = 0
 	vim.g.netrw_liststyle = 3
 	vim.g.netrw_winsize = 15
 	vim.g.netrw_keepdir = 0
 	vim.g.netrw_browse_split = 4
 	vim.g.netrw_sort_by = "name"
-	vim.g.netrw_localrmdir = "rm -r"
-	vim.opt_local.colorcolumn = "0"
-	local win = is_tree_open()
+	local win = Netrw.is_tree_open()
 	if win ~= nil then
-		vim.fn.win_gotoid(vim.fn.win_getid(win))
+		vim.api.nvim_set_current_win(win)
 		return
 	end
-	vim.cmd("Lexplore")
+	local buf_path = vim.api.nvim_buf_get_name(0)
+	local start_dir = (buf_path ~= "" and Helpers.exists(buf_path))
+		and (Helpers.is_dir(buf_path) and buf_path or vim.fs.dirname(buf_path))
+		or vim.uv.cwd()
+		or vim.uv.os_homedir()
+		or "."
+	vim.cmd.Lexplore(Helpers.norm_path(start_dir))
+	local opened_win = Netrw.is_tree_open()
+	if opened_win then
+		Netrw.lock_width(opened_win)
+	end
+
 end
-function Open_file_under_cursor_while_split()
-	local full_path = Netrw_get_fullpath_under_cursor()
-	local curdir_normalized = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
-	if full_path == curdir_normalized then
-		return
-	end
-	if vim.fn.isdirectory(full_path) ~= 0 then
-		if netrw_cr_orig and netrw_cr_orig.callback then
-			netrw_cr_orig.callback()
-		elseif netrw_cr_orig and netrw_cr_orig.rhs then
-			vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
-		end
+function Netrw.open_under_cursor_split()
+	local full_path = Netrw.get_fullpath_under_cursor()
+	local root_norm = Netrw.get_root()
+	if not full_path or full_path == root_norm then return end
+	if Helpers.is_dir(full_path) then
+		invoke_orig_cr()
 		return
 	end
 	local netrw_win = vim.api.nvim_get_current_win()
-	local right_winnr = vim.fn.winnr('l')
+	local right_winnr = vim.fn.winnr("l")
 	if right_winnr ~= vim.fn.winnr() then
-		vim.cmd(right_winnr .. "wincmd w")
-		vim.cmd.edit(full_path)
-	else
-		TurnOffBanner(netrw_win)
-		vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(full_path))
-		local total_width = vim.o.columns
-		local proportional_width = math.max(15, math.floor(total_width * 0.15))
+		local right_winid = vim.fn.win_getid(right_winnr)
+		local right_buf = vim.api.nvim_win_get_buf(right_winid)
+		if vim.bo[right_buf].buftype == "" then
+			vim.api.nvim_set_current_win(right_winid)
+			local ok, err = pcall(vim.cmd.edit, full_path)
+			if not ok then
+				vim.notify("Cannot open file: " .. tostring(err), vim.log.levels.WARN)
+			end
+			return
+		end
+	end
+	Netrw.turn_off_banner(netrw_win)
+	vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(full_path))
+	local proportional_width = math.max(15, math.floor(vim.o.columns * 0.15))
+	vim.api.nvim_win_set_width(netrw_win, proportional_width)
+end
+function Netrw.open_under_cursor_only()
+	local full_path = Netrw.get_fullpath_under_cursor()
+	local root_norm = Netrw.get_root()
+	if not full_path or full_path == root_norm then return end
+	if Helpers.is_dir(full_path) then
+		Netrw.enter_directory_under_cursor()
+		return
+	end
+	local ok = pcall(vim.cmd, "silent only")
+	if not ok or #vim.api.nvim_tabpage_list_wins(0) > 1 then
+		vim.notify("Cannot close other windows (unsaved changes).", vim.log.levels.WARN)
+		return
+	end
+	vim.cmd.edit(full_path)
+end
+function Netrw.open_under_cursor_vsplit()
+	local full_path = Netrw.get_fullpath_under_cursor()
+	local root_norm = Netrw.get_root()
+	if not full_path or full_path == root_norm then return end
+	if Helpers.is_dir(full_path) then
+		invoke_orig_cr()
+		return
+	end
+	local netrw_win = vim.api.nvim_get_current_win()
+	local was_single = (#vim.api.nvim_tabpage_list_wins(0) == 1)
+	vim.cmd("silent botright vsplit " .. vim.fn.fnameescape(full_path))
+	if was_single and vim.api.nvim_win_is_valid(netrw_win) then
+		local proportional_width = math.max(15, math.floor(vim.o.columns * 0.15))
 		vim.api.nvim_win_set_width(netrw_win, proportional_width)
 	end
 end
-function Open_file_under_cursor()
-	local full_path = Netrw_get_fullpath_under_cursor()
-	local curdir_normalized = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
-	if full_path == curdir_normalized then
-		return
-	end
-	if netrw_cr_orig and netrw_cr_orig.callback then
-		netrw_cr_orig.callback()
-	elseif netrw_cr_orig and netrw_cr_orig.rhs then
-		vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
-	end
-	if vim.fn.isdirectory(full_path) == 1 then
-		Enter_directory_under_cursor()
-		return
-	end
-	vim.cmd("silent only")
-end
-function Open_file_under_cursor_in_vsplit()
-	local full_path = Netrw_get_fullpath_under_cursor()
-	local curdir_normalized = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
-	if full_path == curdir_normalized then
-		return
-	end
-	if vim.fn.isdirectory(full_path) ~= 0 then
-		if netrw_cr_orig and netrw_cr_orig.callback then
-			netrw_cr_orig.callback()
-		elseif netrw_cr_orig and netrw_cr_orig.rhs then
-			vim.cmd("normal! " .. vim.api.nvim_replace_termcodes(netrw_cr_orig.rhs, true, false, true))
-		end
-		return
-	end
-	vim.cmd("silent botright vsplit " .. vim.fn.fnameescape(full_path))
-end
-function Create_new_file_or_directory()
+function Netrw.create_entry()
 	vim.cmd("echohl Question")
-	local f_name = vim.fn.input("\nInput the name of the file/directory (directories must end with a /): ", "", "file")
+	local f_name = vim.fn.input("\nInput name (directories must end with / or \\): ", "", "file")
 	vim.cmd("echohl None")
-	if f_name == nil or f_name == "" then
-		print("\nFile or Directory name must not be empty or contain only spaces!!")
+	if not f_name or f_name:match("^%s*$") then
+		vim.notify("File or directory name must not be empty.", vim.log.levels.WARN)
+		return
+	end
+	local is_dir_req = f_name:match("[/\\]$") ~= nil
+	local valid, v_err = validate_relative_subpath(f_name)
+	if not valid then
+		vim.notify(v_err, vim.log.levels.WARN)
 		return
 	end
 	local directory
-	if vim.fn.line(".") == 1 then
-		directory = vim.fn.fnamemodify(vim.w.netrw_treetop or vim.b.netrw_curdir, ":p")
+	local row = select(1, unpack(vim.api.nvim_win_get_cursor(0)))
+	if row == 1 then
+		directory = Netrw.get_root()
 	else
-		local target = Netrw_get_fullpath_under_cursor()
-		directory = vim.fn.isdirectory(target) ~= 0 and target or vim.fn.fnamemodify(target, ":h")
+		local target = Netrw.get_fullpath_under_cursor()
+		directory = (target and Helpers.is_dir(target)) and target or vim.fs.dirname(target)
 	end
-	local full_path = directory.."/"..f_name
-	if vim.fn.filereadable(full_path) ~= 0 or vim.fn.isdirectory(full_path) ~= 0 then
-		print("\nFile or Directory already exists!!")
+	if not directory then return end
+	local full_path = Helpers.join_path(directory, f_name)
+	if Helpers.exists(full_path) then
+		vim.notify("File or directory already exists: " .. f_name, vim.log.levels.WARN)
 		return
 	end
-	if string.sub(f_name, -1) == "/" then
-		vim.fn.mkdir(full_path, "p")
-	else
-		io.open(full_path, "w"):close()
+	local ok, err = is_dir_req and Helpers.mkdir_p(full_path) or Helpers.touch(full_path)
+	if not ok then
+		vim.notify("Create failed: " .. tostring(err), vim.log.levels.ERROR)
+		return
 	end
-	Refresh_netrw(directory)
+	Netrw.refresh()
 end
-function Delete_file_or_directory(path)
-	if vim.fn.isdirectory(path) ~= 0 then
-		vim.fn.delete(path, "rf")
-	else
-		vim.fn.delete(path)
+function Netrw.delete_under_cursor()
+	local path = Netrw.get_fullpath_under_cursor(nil, false)
+	if not path or is_protected_path(path) then
+		vim.notify("Cannot delete tree root or parent directory.", vim.log.levels.WARN)
+		return
+	end
+	vim.cmd("echohl Question")
+	local confirm = vim.fn.input(("Delete %s? (y/n): "):format(vim.fs.basename(path)))
+	vim.cmd("echohl None")
+	if confirm == "y" then
+		local ok, err = Helpers.rm_rf(path)
+		if not ok then
+			vim.notify("Delete failed: " .. tostring(err), vim.log.levels.ERROR)
+		end
+		Netrw.refresh()
 	end
 end
-function Delete_selected()
+function Netrw.delete_selected()
 	local start_line = vim.fn.line("v")
-	local end_line = vim.fn.line(".")
+	local end_line = select(1, unpack(vim.api.nvim_win_get_cursor(0)))
 	if start_line > end_line then start_line, end_line = end_line, start_line end
 	local paths = {}
-	local dirs_to_refresh = {}
+	local seen = {}
 	for lnum = start_line, end_line do
-		vim.fn.cursor(lnum, 1)
-		local p = Netrw_get_fullpath_under_cursor()
-		table.insert(paths, p)
-		dirs_to_refresh[vim.fn.fnamemodify(p, ":h")] = true
+		local p = Netrw.get_fullpath_under_cursor(lnum, false)
+		if p and not seen[p] and not is_protected_path(p) then
+			seen[p] = true
+			paths[#paths + 1] = p
+		end
+	end
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+	if #paths == 0 then
+		vim.notify("No deletable items selected.", vim.log.levels.WARN)
+		return
 	end
 	vim.cmd("echohl Question")
 	local confirm = vim.fn.input(("Delete %d item(s)? (y/n): "):format(#paths))
 	vim.cmd("echohl None")
 	if confirm ~= "y" then return end
 	for _, p in ipairs(paths) do
-		Delete_file_or_directory(p)
+		if Helpers.exists(p) then
+			local ok, err = Helpers.rm_rf(p)
+			if not ok then
+				vim.notify("Delete failed: " .. tostring(err), vim.log.levels.ERROR)
+			end
+		end
 	end
-	for dir, _ in pairs(dirs_to_refresh) do
-		Refresh_netrw(dir)
-	end
+	Netrw.refresh()
 end
-function Rename_file_or_directory()
-	local old_path = Netrw_get_fullpath_under_cursor()
-	if old_path == nil then return end
-	local old_name = vim.fn.fnamemodify(old_path, ":t")
-	local directory = vim.fn.fnamemodify(old_path, ":h")
+function Netrw.rename_entry()
+	local old_path = Netrw.get_fullpath_under_cursor(nil, false)
+	if not old_path or is_protected_path(old_path) then
+		vim.notify("Cannot rename tree root or parent directory.", vim.log.levels.WARN)
+		return
+	end
+	local old_name = vim.fs.basename(old_path)
+	local directory = Helpers.norm_path(vim.fs.dirname(old_path))
 	vim.cmd("echohl Question")
 	local new_name = vim.fn.input("Rename to: ", old_name, "file")
 	vim.cmd("echohl None")
-	if new_name == nil or new_name == "" or new_name == old_name then return end
-	local new_path = directory .. "/" .. new_name
-	os.rename(old_path, new_path)
-	Refresh_netrw(directory)
+	if not new_name or new_name:match("^%s*$") or new_name == old_name then return end
+	local valid, v_err = validate_relative_subpath(new_name)
+	if not valid then
+		vim.notify(v_err, vim.log.levels.WARN)
+		return
+	end
+	local new_path = Helpers.join_path(directory, new_name)
+	if Helpers.exists(new_path) then
+		vim.notify("Target already exists: " .. new_name, vim.log.levels.WARN)
+		return
+	end
+	local new_parent = Helpers.norm_path(vim.fs.dirname(new_path))
+	if new_parent ~= "" and not Helpers.is_dir(new_parent) then
+		Helpers.mkdir_p(new_parent)
+	end
+	local ok, err = vim.uv.fs_rename(old_path, new_path)
+	if not ok then
+		vim.notify("Rename failed: " .. tostring(err), vim.log.levels.ERROR)
+		return
+	end
+	Netrw.refresh()
 end
-NetrwMapsGI = vim.api.nvim_create_augroup("NetrwMaps", { clear = true })
-vim.api.nvim_create_autocmd({ "FileType" }, {
-	group = NetrwMapsGI,
+function Netrw.cd_to_current_file()
+	if vim.bo.buftype ~= "" or vim.bo.filetype == "netrw" or vim.fn.win_gettype() ~= "" then return end
+	local file_name = vim.api.nvim_buf_get_name(0)
+	if file_name == "" or Helpers.is_dir(file_name) or not Helpers.exists(file_name) then return end
+	local dir = Helpers.resolve_path(vim.fs.dirname(file_name))
+	if dir ~= "" and Helpers.is_dir(dir) then
+		pcall(vim.api.nvim_set_current_dir, dir)
+	end
+end
+local netrw_maps_augroup = vim.api.nvim_create_augroup("NetrwMaps", { clear = true })
+vim.api.nvim_create_autocmd("FileType", {
+	group = netrw_maps_augroup,
 	pattern = "netrw",
-	callback = function()
-		vim.cmd([[cnoreabbrev <expr> w (getcmdtype() ==# ':' && getcmdline() ==# 'w' && &filetype ==# 'netrw') ? '' : 'w']])
-		if netrw_cr_orig == nil then
-			netrw_cr_orig = vim.fn.maparg("<CR>", "n", false, true)
-		end
-		if netrw_refresh_orig == nil then
-			netrw_refresh_orig = vim.fn.maparg("<C-l>", "n", false, true)
+	callback = function(ev)
+		vim.cmd([[cnoreabbrev <buffer> <expr> w (getcmdtype() ==# ':' && getcmdline() ==# 'w') ? '' : 'w']])
+		if Netrw.cr_orig == nil then
+			Netrw.cr_orig = vim.fn.maparg("<CR>", "n", false, true)
 		end
 		vim.api.nvim_set_hl(0, "Question", { fg = "#BB9AF7", bold = true })
-		vim.g.netrw_liststyle = 3
-		vim.g.netrw_winsize = 10
-		vim.g.netrw_keepdir = 0
-		vim.g.netrw_browse_split = 4
-		vim.g.netrw_localrmdir = "rm -r"
 		vim.opt_local.colorcolumn = "0"
-		local opts = { buffer = 0, silent = true }
-		pcall(vim.keymap.del, "n", "<CR>", opts)
-		pcall(vim.keymap.del, "n", "<Space>", opts)
-		pcall(vim.keymap.del, "n", "<C-l>", opts)
-		pcall(vim.keymap.del, "n", "<C-h>", opts)
-		pcall(vim.keymap.del, "n", "<C-k>", opts)
-		pcall(vim.keymap.del, "n", "<C-j>", opts)
-		pcall(vim.keymap.del, "n", "%", opts)
-		pcall(vim.keymap.del, "n", "o", opts)
-		pcall(vim.keymap.del, "n", "d", opts)
-		pcall(vim.keymap.del, "n", "D", opts)
-		pcall(vim.keymap.del, "n", "R", opts)
-		pcall(vim.keymap.del, "n", "v", opts)
-		pcall(vim.keymap.del, "n", "i", opts)
-		pcall(vim.keymap.del, "n", "I", opts)
-		pcall(vim.keymap.del, "n", "s", opts)
+		vim.opt_local.statusline = "%!v:lua.StatusLineRender(2)"
+		local opts = { buffer = ev.buf, silent = true }
+		local unmap_keys = { "<CR>", "<Space>", "<C-l>", "<C-h>", "<C-k>", "<C-j>", "%", "o", "d", "D", "R", "v", "i", "I", "s" }
+		for _, lhs in ipairs(unmap_keys) do
+			pcall(vim.keymap.del, "n", lhs, opts)
+		end
 		vim.keymap.set("n", "s", function()
-			local sort_modes = {
-				name  = "time",
-				time  = "size",
-				size  = "exten",
-				exten = "name",
-			}
+			local sort_modes = { name = "time", time = "size", size = "exten", exten = "name" }
 			local current = vim.b.netrw_sort_by or vim.g.netrw_sort_by or "name"
 			local next_mode = sort_modes[current] or "name"
 			vim.g.netrw_sort_by = next_mode
 			vim.b.netrw_sort_by = next_mode
-			Refresh_netrw()
+			Netrw.refresh()
 		end, opts)
-		vim.keymap.set("n", "<CR>", Open_file_under_cursor_while_split, opts)
-		vim.keymap.set("n", "<Leader><CR>", Open_file_under_cursor, opts)
-		vim.keymap.set("n", "<Leader>s<CR>", Open_file_under_cursor_in_vsplit, opts)
-		vim.keymap.set("n", "%", Create_new_file_or_directory, { buffer = 0, silent = true, nowait = true })
-		vim.keymap.set("n", "r", Rename_file_or_directory, opts)
+		vim.keymap.set("n", "<CR>", Netrw.open_under_cursor_split, opts)
+		vim.keymap.set("n", "<Leader><CR>", Netrw.open_under_cursor_only, opts)
+		vim.keymap.set("n", "<Leader>s<CR>", Netrw.open_under_cursor_vsplit, opts)
+		vim.keymap.set("n", "%", Netrw.create_entry, { buffer = ev.buf, silent = true, nowait = true })
+		vim.keymap.set("n", "r", Netrw.rename_entry, opts)
 		vim.keymap.set("n", "<C-l>", "<C-w>l", opts)
 		vim.keymap.set("n", "<C-h>", "<C-w>h", opts)
 		vim.keymap.set("n", "<C-k>", "<C-w>k", opts)
 		vim.keymap.set("n", "<C-j>", "<C-w>j", opts)
-		vim.keymap.set("n", "i", Toggle_hidden_files, opts)
-		vim.keymap.set("n", "d", function()
-			local path = Netrw_get_fullpath_under_cursor()
-				vim.cmd("echohl Question")
-				local confirm = vim.fn.input(("Delete %s? (y/n): "):format(vim.fn.fnamemodify(path, ":t")))
-				vim.cmd("echohl None")
-				if confirm == "y" then
-					Delete_file_or_directory(path)
-					Refresh_netrw(vim.fn.fnamemodify(path, ":h"))
-				end
-		end, opts)
-		vim.keymap.set("v", "d", Delete_selected, opts)
-		vim.o.statusline = "%!v:lua.StatusLineRender(2)"
+		vim.keymap.set("n", "i", Netrw.toggle_hidden_files, opts)
+		vim.keymap.set("n", "d", Netrw.delete_under_cursor, opts)
+		vim.keymap.set("v", "d", Netrw.delete_selected, opts)
 	end,
 })
-function CdToCurrentFile()
-	if vim.bo.buftype ~= "" then return end
-	local file_name = vim.fn.expand("%:p")
-	if file_name == "" or vim.fn.filereadable(file_name) == 0 then return end
-	vim.cmd("cd %:p:h")
-end
-CdToFileGI = vim.api.nvim_create_augroup("CdToFile", { clear = true })
-vim.api.nvim_create_autocmd({ "BufEnter" }, {
-	group = CdToFileGI,
+local cd_to_file_augroup = vim.api.nvim_create_augroup("CdToFile", { clear = true })
+vim.api.nvim_create_autocmd("BufEnter", {
+	group = cd_to_file_augroup,
 	pattern = "*",
-	callback = CdToCurrentFile,
+	callback = Netrw.cd_to_current_file,
 })
+vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+	group = netrw_maps_augroup,
+	callback = function()
+		Netrw.lock_width()
+	end,
+})
+vim.keymap.set("n", "<Leader>ft", Netrw.open_file_tree, { silent = true })
 
 
 -- Terminal
-Config = {
-	width = 0.8,
-	height = 0.8,
-	border = {
-		{ "╭", "FloatBorder" },
-		{ "─", "FloatBorder" },
-		{ "╮", "FloatBorder" },
-		{ "│", "FloatBorder" },
-		{ "╯", "FloatBorder" },
-		{ "─", "FloatBorder" },
-		{ "╰", "FloatBorder" },
-		{ "│", "FloatBorder" },
+local is_list = vim.islist or vim.tbl_islist
+local Terminal = {
+	defaults = {
+		width = 0.8,
+		height = 0.8,
+		border = {
+			{ "╭", "FloatBorder" },
+			{ "─", "FloatBorder" },
+			{ "╮", "FloatBorder" },
+			{ "│", "FloatBorder" },
+			{ "╯", "FloatBorder" },
+			{ "─", "FloatBorder" },
+			{ "╰", "FloatBorder" },
+			{ "│", "FloatBorder" },
+		},
+		winblend = 0,
+		winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
+		shell = nil,
+		toggle_keymap = "<Leader>ter",
+		kill_keymap = "<Leader>q",
+		terminal_mappings = true,
+		title = "Floating Terminal",
+		title_pos = "center",
 	},
-	winblend = 0,
-	shell = nil,
-	toggle_keymap = "<Leader>ter",
-	kill_keymap = "<Leader>q",
-	terminal_mappings = true,
-	title = "Floating Terminal",
-	title_pos = "center"
+	config = {},
+	registry = {},
+	oneshot = {},
+	_deferred_ops = {},
+	_active_toggle_keymap = nil,
 }
-TermRegistry = {}
-function GetKey()
-	if vim.bo.buftype == "terminal" and vim.b.source_buf then
-		return vim.b.source_buf
+function Terminal.sanitize_title(title)
+	local raw = (title ~= nil and title ~= "") and tostring(title) or tostring(Terminal.config.title or "Floating Terminal")
+	return (raw:gsub("[%z\1-\31\127]+", " "))
+end
+function Terminal.valid_title_pos()
+	local pos = Terminal.config.title_pos
+	if pos == "left" or pos == "center" or pos == "right" then
+		return pos
 	end
-	return vim.api.nvim_get_current_buf()
+	return "center"
 end
-function CreateFloatingWindow(buf)
-	local width = math.floor(vim.o.columns * Config.width)
-	local height = math.floor(vim.o.lines * Config.height)
-	local win = vim.api.nvim_open_win(buf, true, {
-		relative = "editor",
-		row = math.floor((vim.o.lines - vim.o.cmdheight - height)/2),
-		col = math.floor((vim.o.columns - width)/2),
-		width = width,
-		height = height,
-		style = "minimal",
-		border = Config.border,
-		title = Config.title,
-		title_pos = Config.title_pos
-	})
-	vim.wo[win].winblend = Config.winblend
-	vim.wo[win].cursorline = true
-	vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:FloatBorder"
-	return win
-end
-function ToggleTerminal(cmd)
-	if cmd == nil then
-		local key = GetKey()
-		local entry = TermRegistry[key]
-		if entry and entry.win and vim.api.nvim_win_is_valid(entry.win) then
-			vim.api.nvim_win_close(entry.win, true)
-			entry.win = nil
-			return
-		end
-		for k, e in pairs(TermRegistry) do
-			if k ~= key and e.win and vim.api.nvim_win_is_valid(e.win) then
-				vim.api.nvim_win_close(e.win, true)
-				e.win = nil
+function Terminal.is_valid_cmd(cmd)
+	if type(cmd) == "string" then
+		return vim.trim(cmd) ~= ""
+	end
+	if type(cmd) == "table" and is_list(cmd) and #cmd > 0 then
+		for i = 1, #cmd do
+			if type(rawget(cmd, i)) ~= "string" then
+				return false
 			end
 		end
-		if entry and entry.buf and vim.api.nvim_buf_is_valid(entry.buf) then
-			entry.win = CreateFloatingWindow(entry.buf)
-			vim.cmd("startinsert")
-			return
-		end
-		local cwd = vim.fn.expand("%:p:h")
-		if cwd == "" then
-			cwd = vim.fn.getcwd()
-		end
-		local buf = vim.api.nvim_create_buf(false, true)
-		vim.b[buf].source_buf = key
-		local win = CreateFloatingWindow(buf)
-		vim.fn.jobstart(vim.o.shell, {
-			cwd = cwd,
-			term = true,
-			on_exit = function()
-				if TermRegistry[key] and TermRegistry[key].win and vim.api.nvim_win_is_valid(TermRegistry[key].win) then
-					vim.api.nvim_win_close(TermRegistry[key].win, true)
-				end
-				TermRegistry[key] = nil
-			end,
-		})
-		vim.bo[buf].buflisted = false
-		vim.keymap.set({ "t", "n" }, Config.toggle_keymap, function()
-			ToggleTerminal()
-		end, { buffer = buf, noremap = true, silent = true })
-		vim.keymap.set({ "t", "n" }, Config.kill_keymap, function()
-			KillTerminal()
-		end, { buffer = buf, noremap = true, silent = true })
-		-- vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
-		TermRegistry[key] = { buf = buf, win = win }
-		vim.cmd("startinsert")
-	else
-		local buf = vim.api.nvim_create_buf(false, true)
-		local win = CreateFloatingWindow(buf)
-		local cwd = vim.fn.expand("%:p:h")
-		if cwd == "" then
-			cwd = vim.fn.getcwd()
-		end
-		vim.fn.jobstart(cmd, {
-			cwd = cwd,
-			term = true,
-			on_exit = function()
-				if win and vim.api.nvim_win_is_valid(win) then
-					vim.api.nvim_win_close(win, true)
-				end
-			end,
-		})
-		vim.cmd("startinsert")
-		vim.keymap.set("n", "q", "<C-\\><C-n>:q!<CR>", { silent = true })
-		vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { buffer = buf, noremap = true, silent = true })
+		local exe = rawget(cmd, 1)
+		return type(exe) == "string" and vim.trim(exe) ~= ""
+	end
+	return false
+end
+function Terminal.is_job_alive(job_id)
+	if not job_id or job_id <= 0 then
+		return false
+	end
+	local ok, status = pcall(vim.fn.jobwait, { job_id }, 0)
+	if not ok or type(status) ~= "table" then
+		return false
+	end
+	return rawget(status, 1) == -1
+end
+function Terminal.run_when_safe(fn)
+	if vim.fn.getcmdwintype() == "" then
+		fn()
+		return
+	end
+	Terminal._deferred_ops[#Terminal._deferred_ops + 1] = fn
+end
+function Terminal.flush_deferred_ops()
+	if #Terminal._deferred_ops == 0 or vim.fn.getcmdwintype() ~= "" then
+		return
+	end
+	local ops = Terminal._deferred_ops
+	Terminal._deferred_ops = {}
+	for _, fn in ipairs(ops) do
+		pcall(fn)
 	end
 end
-function KillTerminal()
-	local key = GetKey()
-	local entry = TermRegistry[key]
+function Terminal.get_restore_win()
+	local cur = vim.api.nvim_get_current_win()
+	if vim.api.nvim_win_is_valid(cur) and vim.api.nvim_win_get_config(cur).relative == "" then
+		return cur
+	end
+	for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_config(w).relative == "" then
+			return w
+		end
+	end
+	return cur
+end
+function Terminal.get_key()
+	local cur = vim.api.nvim_get_current_buf()
+	if not vim.api.nvim_buf_is_valid(cur) then
+		return cur
+	end
+	if vim.bo[cur].buftype == "terminal" then
+		local src = vim.b[cur].source_buf
+		if src and vim.api.nvim_buf_is_valid(src) then
+			return src
+		end
+	end
+	return cur
+end
+function Terminal.resolve_cwd(source_buf)
+	if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+		local name = vim.api.nvim_buf_get_name(source_buf)
+		if name ~= "" and not name:match("^[a-zA-Z][a-zA-Z0-9+.-]*://") then
+			local norm = Helpers.norm_path(name)
+			if norm ~= "" and norm ~= "." then
+				if Helpers.is_dir(norm) then
+					return Helpers.resolve_path(vim.fn.fnamemodify(norm, ":p"))
+				end
+				local dir = Helpers.norm_path(vim.fs.dirname(norm))
+				if dir ~= "" and dir ~= "." and Helpers.is_dir(dir) then
+					return Helpers.resolve_path(vim.fn.fnamemodify(dir, ":p"))
+				end
+			end
+		end
+	end
+	local cwd = Helpers.norm_path(vim.uv.cwd() or vim.fn.getcwd())
+	if cwd ~= "" and Helpers.is_dir(cwd) then
+		return cwd
+	end
+	return Helpers.norm_path(vim.uv.os_homedir() or vim.fn.expand("~"))
+end
+function Terminal.resolve_shell()
+	local sh = Terminal.config.shell
+	if type(sh) == "function" then
+		local ok, res = pcall(sh)
+		sh = ok and res or nil
+	end
+	if type(sh) == "string" then
+		sh = vim.trim(sh)
+	end
+	if Terminal.is_valid_cmd(sh) then
+		if type(sh) == "table" then
+			local copy = vim.deepcopy(sh)
+			rawset(copy, 1, vim.trim(rawget(copy, 1)))
+			return copy
+		end
+		return sh
+	end
+	if Helpers.get_os() == "Windows" then
+		for _, ps in ipairs({ "pwsh", "pwsh.exe" }) do
+			if vim.fn.executable(ps) == 1 then
+				local resolved = vim.fn.exepath(ps)
+				return { resolved ~= "" and resolved or ps, "-NoLogo" }
+			end
+		end
+		for _, ps in ipairs({ "powershell", "powershell.exe" }) do
+			if vim.fn.executable(ps) == 1 then
+				local resolved = vim.fn.exepath(ps)
+				return { resolved ~= "" and resolved or ps, "-NoLogo" }
+			end
+		end
+		local comspec = vim.trim(vim.env.COMSPEC or "")
+		if comspec ~= "" and vim.fn.executable(comspec) == 1 then
+			return comspec
+		end
+		return "cmd.exe"
+	end
+	local env_sh = vim.trim(vim.env.SHELL or "")
+	if #env_sh >= 2 and ((env_sh:sub(1, 1) == '"' and env_sh:sub(-1) == '"') or (env_sh:sub(1, 1) == "'" and env_sh:sub(-1) == "'")) then
+		env_sh = vim.trim(env_sh:sub(2, -2))
+	end
+	if env_sh ~= "" then
+		if env_sh:sub(1, 1) == "~" then
+			env_sh = vim.fn.expand(env_sh)
+		end
+		if vim.fn.executable(env_sh) == 1 and not env_sh:match("[/\\]nologin$") and not env_sh:match("[/\\]false$") then
+			local resolved = vim.fn.exepath(env_sh)
+			return resolved ~= "" and resolved or env_sh
+		end
+	end
+	for _, candidate in ipairs({ "zsh", "bash", "sh" }) do
+		if vim.fn.executable(candidate) == 1 then
+			local resolved = vim.fn.exepath(candidate)
+			return resolved ~= "" and resolved or candidate
+		end
+	end
+	return "/bin/sh"
+end
+function Terminal.compute_geometry()
+	local columns = math.max(1, vim.o.columns)
+	local tab_offset = (vim.o.showtabline == 2 or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
+	local avail_lines = math.max(1, vim.o.lines - vim.o.cmdheight - tab_offset)
+	local b = Terminal.config.border
+	local pad = 2
+	if b == nil or b == "none" or b == "" or (type(b) == "table" and #b == 0) then
+		pad = 0
+	elseif b == "shadow" then
+		pad = 1
+	end
+	if columns <= pad or avail_lines <= pad then
+		b = "none"
+		pad = 0
+	end
+	local w_ratio = tonumber(Terminal.config.width)
+	if not w_ratio or w_ratio ~= w_ratio then
+		w_ratio = 0.8
+	end
+	w_ratio = math.min(1.0, math.max(0.05, w_ratio))
+	local h_ratio = tonumber(Terminal.config.height)
+	if not h_ratio or h_ratio ~= h_ratio then
+		h_ratio = 0.8
+	end
+	h_ratio = math.min(1.0, math.max(0.05, h_ratio))
+	local max_w = math.max(1, columns - pad)
+	local max_h = math.max(1, avail_lines - pad)
+	local width = math.min(max_w, math.max(1, math.floor(columns * w_ratio)))
+	local height = math.min(max_h, math.max(1, math.floor(avail_lines * h_ratio)))
+	local row = tab_offset + math.max(0, math.floor((avail_lines - height - pad) / 2))
+	local col = math.max(0, math.floor((columns - width - pad) / 2))
+	return {
+		width = width,
+		height = height,
+		row = row,
+		col = col,
+		pad = pad,
+		border = b,
+	}
+end
+function Terminal.close_window(win, prev_win)
+	Terminal.run_when_safe(function()
+		local was_focused = win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() == win
+		if win and vim.api.nvim_win_is_valid(win) then
+			pcall(vim.api.nvim_win_close, win, true)
+		end
+		if was_focused and prev_win and prev_win ~= win and vim.api.nvim_win_is_valid(prev_win) then
+			if vim.api.nvim_win_get_tabpage(prev_win) == vim.api.nvim_get_current_tabpage() then
+				pcall(vim.api.nvim_set_current_win, prev_win)
+			end
+		end
+	end)
+end
+function Terminal.delete_buffer(buf)
+	Terminal.run_when_safe(function()
+		if buf and vim.api.nvim_buf_is_valid(buf) then
+			pcall(vim.api.nvim_buf_delete, buf, { force = true })
+		end
+	end)
+end
+function Terminal.spawn_pty(buf, cmd, cwd, on_exit)
+	local opts = {
+		cwd = cwd,
+		on_exit = on_exit,
+	}
+	if vim.fn.has("nvim-0.11") == 1 then
+		opts.term = true
+		local ok, job_id = pcall(vim.fn.jobstart, cmd, opts)
+		return ok and job_id or -1
+	end
+	local ok, job_id = pcall(vim.api.nvim_buf_call, buf, function()
+		return vim.fn.termopen(cmd, opts)
+	end)
+	return ok and job_id or -1
+end
+function Terminal.create_floating_window(buf, custom_title)
+	local geom = Terminal.compute_geometry()
+	local clean_title = Terminal.sanitize_title(custom_title)
+	if vim.api.nvim_buf_is_valid(buf) then
+		vim.b[buf]._term_custom_title = custom_title and clean_title or nil
+	end
+	local win_opts = {
+		relative = "editor",
+		row = geom.row,
+		col = geom.col,
+		width = geom.width,
+		height = geom.height,
+		style = "minimal",
+		border = geom.border,
+	}
+	if geom.pad > 0 and geom.border ~= "shadow" and geom.width >= 4 then
+		win_opts.title = clean_title
+		win_opts.title_pos = Terminal.valid_title_pos()
+	end
+	local ok, win = pcall(vim.api.nvim_open_win, buf, true, win_opts)
+	if not ok or not win or not vim.api.nvim_win_is_valid(win) then
+		ok, win = pcall(vim.api.nvim_open_win, buf, true, {
+			relative = "editor",
+			row = geom.row,
+			col = geom.col,
+			width = geom.width,
+			height = geom.height,
+			style = "minimal",
+			border = geom.pad > 0 and "single" or "none",
+		})
+	end
+	if not ok or not win or not vim.api.nvim_win_is_valid(win) then
+		ok, win = pcall(vim.api.nvim_open_win, buf, true, {
+			relative = "editor",
+			row = 0,
+			col = 0,
+			width = 1,
+			height = 1,
+			style = "minimal",
+			border = "none",
+		})
+		if not ok or not win or not vim.api.nvim_win_is_valid(win) then
+			return nil
+		end
+	end
+	vim.wo[win].winblend = math.min(100, math.max(0, tonumber(Terminal.config.winblend) or 0))
+	vim.wo[win].cursorline = true
+	vim.wo[win].number = false
+	vim.wo[win].relativenumber = false
+	vim.wo[win].signcolumn = "no"
+	vim.wo[win].foldcolumn = "0"
+	vim.wo[win].winhighlight = Terminal.config.winhighlight
+	return win
+end
+function Terminal.bind_buffer_keymaps(buf, persistent)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+	local prev = vim.b[buf]._term_keys
+	if prev then
+		if prev.toggle then
+			pcall(vim.keymap.del, "t", prev.toggle, { buffer = buf })
+			pcall(vim.keymap.del, "n", prev.toggle, { buffer = buf })
+		end
+		if prev.kill then
+			pcall(vim.keymap.del, "t", prev.kill, { buffer = buf })
+			pcall(vim.keymap.del, "n", prev.kill, { buffer = buf })
+		end
+		if prev.esc then
+			pcall(vim.keymap.del, "t", "<Esc>", { buffer = buf })
+		end
+		if prev.quit then
+			pcall(vim.keymap.del, "n", "q", { buffer = buf })
+		end
+		vim.b[buf]._term_keys = nil
+	end
+	if not Terminal.config.terminal_mappings then
+		return
+	end
+	local opts = { buffer = buf, noremap = true, silent = true }
+	vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", opts)
+	if persistent then
+		local tk = Terminal.config.toggle_keymap
+		local kk = Terminal.config.kill_keymap
+		local mapped_toggle = nil
+		local mapped_kill = nil
+		if type(tk) == "string" and tk ~= "" then
+			vim.keymap.set({ "t", "n" }, tk, function()
+				Terminal.toggle()
+			end, opts)
+			mapped_toggle = tk
+		end
+		if type(kk) == "string" and kk ~= "" then
+			vim.keymap.set({ "t", "n" }, kk, function()
+				Terminal.kill()
+			end, opts)
+			mapped_kill = kk
+		end
+		vim.b[buf]._term_keys = {
+			esc = true,
+			toggle = mapped_toggle,
+			kill = mapped_kill,
+		}
+	else
+		vim.keymap.set("n", "q", function()
+			for w, item in pairs(Terminal.oneshot) do
+				if item.buf == buf then
+					Terminal.cleanup_oneshot(w, false, false)
+					return
+				end
+			end
+			Terminal.delete_buffer(buf)
+		end, opts)
+		vim.b[buf]._term_keys = { esc = true, quit = true }
+	end
+end
+function Terminal.cleanup_oneshot(win, defer_buf_delete, skip_ui)
+	local item = Terminal.oneshot[win]
+	if not item then
+		return
+	end
+	Terminal.oneshot[win] = nil
+	if not item.exited and item.job_id and item.job_id > 0 then
+		pcall(vim.fn.jobstop, item.job_id)
+	end
+	if skip_ui then
+		return
+	end
+	if defer_buf_delete then
+		vim.schedule(function()
+			Terminal.close_window(win, item.prev_win)
+			Terminal.delete_buffer(item.buf)
+		end)
+	else
+		Terminal.close_window(win, item.prev_win)
+		Terminal.delete_buffer(item.buf)
+	end
+end
+function Terminal.close_all_floats()
+	for _, w in ipairs(vim.tbl_keys(Terminal.oneshot)) do
+		Terminal.cleanup_oneshot(w, false, false)
+	end
+	local cur_tab = vim.api.nvim_get_current_tabpage()
+	for _, e in pairs(Terminal.registry) do
+		if e.win and vim.api.nvim_win_is_valid(e.win) then
+			local w = e.win
+			local win_tab = vim.api.nvim_win_get_tabpage(w)
+			local restore = e.prev_win
+			Terminal.close_window(w, win_tab == cur_tab and restore or nil)
+			if not vim.api.nvim_win_is_valid(w) then
+				e.win = nil
+				e.prev_win = nil
+			end
+		end
+	end
+end
+function Terminal.toggle(cmd, close_on_exit)
+	if vim.fn.getcmdwintype() ~= "" then
+		vim.notify("Cannot toggle terminal from command-line window", vim.log.levels.WARN)
+		return
+	end
+	if cmd ~= nil then
+		if not Terminal.is_valid_cmd(cmd) then
+			vim.notify("Terminal command must be a non-empty string or list of strings", vim.log.levels.WARN)
+			return
+		end
+		local key = Terminal.get_key()
+		Terminal.close_all_floats()
+		local prev_win = Terminal.get_restore_win()
+		local cwd = Terminal.resolve_cwd(key)
+		local buf = vim.api.nvim_create_buf(false, true)
+		vim.bo[buf].buflisted = false
+		vim.b[buf].source_buf = key
+		local raw_title = type(cmd) == "table" and vim.trim(table.concat(cmd, " ")) or vim.trim(cmd)
+		local title = Terminal.sanitize_title(raw_title)
+		local win = Terminal.create_floating_window(buf, title)
+		if not win then
+			Terminal.delete_buffer(buf)
+			vim.notify("Failed to open terminal window", vim.log.levels.ERROR)
+			return
+		end
+		local job_id = Terminal.spawn_pty(buf, cmd, cwd, function(_, exit_code)
+			vim.schedule(function()
+				local item = Terminal.oneshot[win]
+				if not item or item.buf ~= buf then
+					return
+				end
+				item.exited = true
+				if close_on_exit then
+					Terminal.cleanup_oneshot(win, false, false)
+					return
+				end
+				if win and vim.api.nvim_win_is_valid(win) then
+					local done_title = Terminal.sanitize_title(string.format("[%d] %s", exit_code or 0, title))
+					if vim.api.nvim_buf_is_valid(buf) then
+						vim.b[buf]._term_custom_title = done_title
+					end
+					Terminal.run_when_safe(function()
+						local cur = Terminal.oneshot[win]
+						if not cur or cur.buf ~= buf or not vim.api.nvim_win_is_valid(win) then
+							return
+						end
+						local geom = Terminal.compute_geometry()
+						if geom.pad > 0 and geom.border ~= "shadow" and geom.width >= 4 then
+							pcall(vim.api.nvim_win_set_config, win, {
+								border = geom.border,
+								title = done_title,
+								title_pos = Terminal.valid_title_pos(),
+							})
+						end
+					end)
+					if vim.api.nvim_get_current_win() == win then
+						pcall(vim.cmd, "stopinsert")
+					end
+				end
+			end)
+		end)
+		if job_id <= 0 then
+			Terminal.close_window(win, prev_win)
+			Terminal.delete_buffer(buf)
+			vim.notify("Failed to run command: " .. title, vim.log.levels.ERROR)
+			return
+		end
+		Terminal.oneshot[win] = { buf = buf, job_id = job_id, prev_win = prev_win, exited = false }
+		Terminal.bind_buffer_keymaps(buf, false)
+		pcall(vim.cmd, "startinsert")
+		return
+	end
+	local key = Terminal.get_key()
+	local entry = Terminal.registry[key]
+	local cur_tab = vim.api.nvim_get_current_tabpage()
+	if entry and entry.win and vim.api.nvim_win_is_valid(entry.win) then
+		local w = entry.win
+		local win_tab = vim.api.nvim_win_get_tabpage(w)
+		local restore = entry.prev_win
+		Terminal.close_window(w, win_tab == cur_tab and restore or nil)
+		if not vim.api.nvim_win_is_valid(w) then
+			entry.win = nil
+			entry.prev_win = nil
+		end
+		if win_tab == cur_tab then
+			return
+		end
+	end
+	Terminal.close_all_floats()
+	local prev_win = Terminal.get_restore_win()
+	if entry
+		and entry.buf
+		and vim.api.nvim_buf_is_valid(entry.buf)
+		and vim.api.nvim_buf_is_loaded(entry.buf)
+		and Terminal.is_job_alive(entry.job_id)
+	then
+		local existing_win = vim.fn.bufwinid(entry.buf)
+		if existing_win ~= -1 and vim.api.nvim_win_is_valid(existing_win) then
+			if vim.api.nvim_win_get_config(existing_win).relative ~= "" then
+				entry.prev_win = (prev_win ~= existing_win) and prev_win or nil
+				entry.win = existing_win
+			else
+				entry.prev_win = nil
+				entry.win = nil
+			end
+			pcall(vim.api.nvim_set_current_win, existing_win)
+			pcall(vim.cmd, "startinsert")
+			return
+		end
+		local win = Terminal.create_floating_window(entry.buf, vim.b[entry.buf]._term_custom_title)
+		if not win then
+			vim.notify("Failed to open terminal window", vim.log.levels.ERROR)
+			return
+		end
+		entry.prev_win = (prev_win ~= win) and prev_win or nil
+		entry.win = win
+		pcall(vim.cmd, "startinsert")
+		return
+	end
+	if entry then
+		Terminal.kill_by_key(key, false, false)
+	end
+	local cwd = Terminal.resolve_cwd(key)
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.bo[buf].buflisted = false
+	vim.b[buf].source_buf = key
+	local win = Terminal.create_floating_window(buf)
+	if not win then
+		Terminal.delete_buffer(buf)
+		vim.notify("Failed to open terminal window", vim.log.levels.ERROR)
+		return
+	end
+	local job_id = Terminal.spawn_pty(buf, Terminal.resolve_shell(), cwd, function()
+		vim.schedule(function()
+			local current = Terminal.registry[key]
+			local restore = nil
+			local open_win = nil
+			if current and current.buf == buf then
+				restore = current.prev_win
+				open_win = current.win
+				Terminal.registry[key] = nil
+			end
+			Terminal.close_window(open_win, restore)
+			Terminal.delete_buffer(buf)
+		end)
+	end)
+	if job_id <= 0 then
+		Terminal.close_window(win, prev_win)
+		Terminal.delete_buffer(buf)
+		vim.notify("Failed to start terminal shell", vim.log.levels.ERROR)
+		return
+	end
+	Terminal.bind_buffer_keymaps(buf, true)
+	Terminal.registry[key] = {
+		buf = buf,
+		win = win,
+		prev_win = (prev_win ~= win) and prev_win or nil,
+		job_id = job_id,
+	}
+	pcall(vim.cmd, "startinsert")
+end
+function Terminal.kill_by_key(key, defer_teardown, skip_ui)
+	local entry = Terminal.registry[key]
 	if not entry then
 		return
 	end
-	if entry.win and vim.api.nvim_win_is_valid(entry.win) then
-		vim.api.nvim_win_close(entry.win, true)
+	Terminal.registry[key] = nil
+	if entry.job_id and entry.job_id > 0 then
+		pcall(vim.fn.jobstop, entry.job_id)
 	end
-	if entry.buf and vim.api.nvim_buf_is_valid(entry.buf) then
-		vim.fn.jobstop(vim.b[entry.buf].terminal_job_id)
-		vim.api.nvim_buf_delete(entry.buf, { force = true })
+	if skip_ui then
+		return
 	end
-	TermRegistry[key] = nil
+	if defer_teardown then
+		vim.schedule(function()
+			Terminal.close_window(entry.win, entry.prev_win)
+			Terminal.delete_buffer(entry.buf)
+		end)
+	else
+		Terminal.close_window(entry.win, entry.prev_win)
+		Terminal.delete_buffer(entry.buf)
+	end
 end
-TermOpsV = vim.api.nvim_create_augroup("TermOps", { clear = true })
-vim.api.nvim_create_autocmd("TermOpen", {
-	group = TermOpsV,
-	pattern = "*",
-	callback = function()
-		vim.opt_local.number = false
-		vim.opt_local.relativenumber = false
+function Terminal.kill()
+	local cur_win = vim.api.nvim_get_current_win()
+	if Terminal.oneshot[cur_win] then
+		Terminal.cleanup_oneshot(cur_win, false, false)
+		return
 	end
-})
+	Terminal.kill_by_key(Terminal.get_key(), false, false)
+end
+function Terminal.reposition_open_windows()
+	Terminal.run_when_safe(function()
+		local geom = Terminal.compute_geometry()
+		local blend = math.min(100, math.max(0, tonumber(Terminal.config.winblend) or 0))
+		local function apply_resize(win, buf)
+			if not (win and vim.api.nvim_win_is_valid(win)) then
+				return
+			end
+			local cfg = {
+				relative = "editor",
+				row = geom.row,
+				col = geom.col,
+				width = geom.width,
+				height = geom.height,
+				border = geom.border,
+			}
+			if geom.pad > 0 and geom.border ~= "shadow" then
+				if geom.width >= 4 and buf and vim.api.nvim_buf_is_valid(buf) then
+					cfg.title = vim.b[buf]._term_custom_title or Terminal.sanitize_title(nil)
+					cfg.title_pos = Terminal.valid_title_pos()
+				else
+					cfg.title = ""
+				end
+			end
+			pcall(vim.api.nvim_win_set_config, win, cfg)
+			vim.wo[win].winblend = blend
+			vim.wo[win].winhighlight = Terminal.config.winhighlight
+		end
+		for _, e in pairs(Terminal.registry) do
+			apply_resize(e.win, e.buf)
+		end
+		for w, item in pairs(Terminal.oneshot) do
+			apply_resize(w, item.buf)
+		end
+	end)
+end
+function Terminal.setup(opts)
+	Terminal.config = vim.tbl_deep_extend("force", {}, Terminal.defaults, opts or {})
+	if opts and opts.border ~= nil then
+		Terminal.config.border = vim.deepcopy(opts.border)
+	end
+	local augroup = vim.api.nvim_create_augroup("TermOps", { clear = true })
+	vim.api.nvim_create_autocmd("CmdwinLeave", {
+		group = augroup,
+		pattern = "*",
+		callback = function()
+			vim.schedule(Terminal.flush_deferred_ops)
+		end,
+	})
+	vim.api.nvim_create_autocmd("WinEnter", {
+		group = augroup,
+		pattern = "*",
+		callback = function()
+			if next(Terminal.oneshot) == nil then
+				return
+			end
+			local cur_win = vim.api.nvim_get_current_win()
+			local item = Terminal.oneshot[cur_win]
+			if item and item.exited then
+				pcall(vim.cmd, "stopinsert")
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("WinClosed", {
+		group = augroup,
+		pattern = "*",
+		callback = function(ev)
+			local closed_win = tonumber(ev.match)
+			if not closed_win then
+				return
+			end
+			if Terminal.oneshot[closed_win] then
+				Terminal.cleanup_oneshot(closed_win, true, false)
+			end
+			for _, e in pairs(Terminal.registry) do
+				if e.win == closed_win then
+					e.win = nil
+				end
+				if e.prev_win == closed_win then
+					e.prev_win = nil
+				end
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("VimResized", {
+		group = augroup,
+		pattern = "*",
+		callback = function()
+			Terminal.reposition_open_windows()
+		end,
+	})
+	vim.api.nvim_create_autocmd("BufWipeout", {
+		group = augroup,
+		pattern = "*",
+		callback = function(ev)
+			if Terminal.registry[ev.buf] then
+				Terminal.kill_by_key(ev.buf, true, false)
+			end
+			local stale_keys = {}
+			for k, e in pairs(Terminal.registry) do
+				if e.buf == ev.buf then
+					stale_keys[#stale_keys + 1] = k
+				end
+			end
+			for _, k in ipairs(stale_keys) do
+				Terminal.kill_by_key(k, true, false)
+			end
+			local stale_wins = {}
+			for w, item in pairs(Terminal.oneshot) do
+				if item.buf == ev.buf then
+					stale_wins[#stale_wins + 1] = w
+				end
+			end
+			for _, w in ipairs(stale_wins) do
+				Terminal.cleanup_oneshot(w, true, false)
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		group = augroup,
+		pattern = "*",
+		callback = function()
+			Terminal._deferred_ops = {}
+			for _, k in ipairs(vim.tbl_keys(Terminal.registry)) do
+				Terminal.kill_by_key(k, false, true)
+			end
+			for _, w in ipairs(vim.tbl_keys(Terminal.oneshot)) do
+				Terminal.cleanup_oneshot(w, false, true)
+			end
+		end,
+	})
+	if Terminal._active_toggle_keymap and Terminal._active_toggle_keymap ~= Terminal.config.toggle_keymap then
+		pcall(vim.keymap.del, "n", Terminal._active_toggle_keymap)
+	end
+	Terminal._active_toggle_keymap = nil
+	if type(Terminal.config.toggle_keymap) == "string" and Terminal.config.toggle_keymap ~= "" then
+		Terminal._active_toggle_keymap = Terminal.config.toggle_keymap
+		vim.keymap.set("n", Terminal.config.toggle_keymap, function()
+			Terminal.toggle(nil)
+		end, { noremap = true, silent = true, desc = "Toggle floating terminal" })
+	end
+	for _, e in pairs(Terminal.registry) do
+		if e.buf and vim.api.nvim_buf_is_valid(e.buf) then
+			Terminal.bind_buffer_keymaps(e.buf, true)
+		end
+	end
+	for _, item in pairs(Terminal.oneshot) do
+		if item.buf and vim.api.nvim_buf_is_valid(item.buf) then
+			Terminal.bind_buffer_keymaps(item.buf, false)
+		end
+	end
+	Terminal.reposition_open_windows()
+end
+Terminal.setup()
 
 
 -- C syntax highlighting and tags
@@ -1228,7 +2845,7 @@ function CCtags()
 	handle:close()
 	local include_dirs = {}
 	local in_includes = false
-	for _, line in ipairs(split(raw, "\n")) do
+	for _, line in ipairs(Helpers.split(raw, "\n")) do
 		if string.find(line, "#include <...>", 1, true) then
 			in_includes = true
 			goto continue
@@ -1358,7 +2975,7 @@ function PyCtags()
 	local raw = handle:read("*a")
 	handle:close()
 	local include_dirs = {}
-	for _, line in ipairs(split(raw, "\n")) do
+	for _, line in ipairs(Helpers.split(raw, "\n")) do
 		local dir = vim.trim(line)
 		if dir ~= nil and dir ~= "" and vim.fn.isdirectory(dir) ~= 0 then
 			table.insert(include_dirs, dir)
@@ -1721,59 +3338,49 @@ vim.api.nvim_create_autocmd({ "TextChanged", "InsertLeave" }, {
 
 
 -- Netrw rendering
-local netrw_ns = vim.api.nvim_create_namespace("netrw_connectors")
-local function get_netrw_lines(buf)
-	return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+local NetrwUI = {
+	ns = vim.api.nvim_create_namespace("netrw_connectors"),
+	has_inline = vim.fn.has("nvim-0.10") == 1,
+}
+local function read_netrw_var(buf, key)
+	local bval = vim.b[buf][key]
+	if bval ~= nil and bval ~= vim.NIL then
+		return bval
+	end
+	local gval = vim.g[key]
+	if gval ~= nil and gval ~= vim.NIL then
+		return gval
+	end
+	return nil
 end
-local function depth_of(line)
+local function set_netrw_hl()
+	vim.api.nvim_set_hl(0, "NetrwSize", { fg = "#E0AF68" })
+	vim.api.nvim_set_hl(0, "NetrwConnector", { link = "Comment", default = true })
+end
+local function parse_netrw_line(line, depth_str)
 	local depth = 0
 	local rest = line
-	while rest:sub(1, 2) == "| " do
+	local step = #depth_str
+	while step > 0 and rest:sub(1, step) == depth_str do
 		depth = depth + 1
-		rest = rest:sub(3)
+		rest = rest:sub(step + 1)
 	end
-	return depth
+	local name = rest:gsub("^%d+/?%s*", "")
+	name = name:gsub("%s*%->.*$", "")
+	local classify = vim.g.netrw_classify
+	if classify == nil or classify == vim.NIL or classify ~= 0 then
+		name = name:gsub("[/@%*=|]+%s*$", "")
+	else
+		name = name:gsub("/%s*$", "")
+	end
+	return depth, name
 end
-local function get_fullpath_for_line(target_lnum)
-	local base_dir = vim.w.netrw_treetop or vim.b.netrw_curdir
-	if not base_dir then return nil end
-	local depth_str = "| "
-	local function depth_and_name(line)
-		local d = 0
-		local rest = line
-		while rest:sub(1, #depth_str) == depth_str do
-			d = d + 1
-			rest = rest:sub(#depth_str + 1)
-		end
-		rest = rest:gsub("^%d+/?%s*", "")
-		rest = rest:gsub("%s*%-%->.*$", "")
-		rest = rest:gsub("[/@%*=|]%s*$", "")
-		return d, rest
-	end
-	local lnum = target_lnum or vim.fn.line(".")
-	local line_str = vim.fn.getline(lnum)
-	local cur_depth, name = depth_and_name(line_str)
-	if name == ".." then
-		return vim.fn.fnamemodify(base_dir .. "/..", ":p")
-	end
-	if name == "" or cur_depth == 0 then
-		return vim.fn.fnamemodify(base_dir, ":p")
-	end
-	local parts = { name }
-	local want_depth = cur_depth
-	while want_depth > 1 and lnum > 1 do
-		lnum = lnum - 1
-		local d, n = depth_and_name(vim.fn.getline(lnum))
-		if d < want_depth and d > 0 then
-			table.insert(parts, 1, n)
-			want_depth = d
-		end
-	end
-	return vim.fn.fnamemodify(base_dir .. "/" .. table.concat(parts, "/"), ":p")
+local function is_netrw_banner(line)
+	return line:match('^"[ =]') ~= nil
 end
 local function format_size(bytes)
 	local n = tonumber(bytes)
-	if not n then return "" end
+	if not n or n < 0 then return "" end
 	local units = { "B", "K", "M", "G", "T" }
 	local i = 1
 	while n >= 1024 and i < #units do
@@ -1786,69 +3393,139 @@ local function format_size(bytes)
 	return string.format("%.1f%s", n, units[i])
 end
 local function format_time(epoch)
-	if not epoch then return "" end
-	return os.date("%Y-%m-%d %H:%M", epoch)
+	if not epoch or epoch < 0 then return "" end
+	local ok, formatted = pcall(os.date, "%Y-%m-%d %H:%M", epoch)
+	return (ok and type(formatted) == "string") and formatted or ""
 end
-local function render_netrw_connectors(buf)
+local function get_buf_base_dir(buf, is_tree)
+	if is_tree then
+		for _, win in ipairs(vim.api.nvim_list_wins()) do
+			if vim.api.nvim_win_get_buf(win) == buf and vim.w[win] then
+				local treetop = vim.w[win].netrw_treetop
+				if treetop ~= nil and treetop ~= vim.NIL and treetop ~= "" then
+					return treetop
+				end
+			end
+		end
+	end
+	local curdir = vim.b[buf].netrw_curdir
+	if curdir ~= nil and curdir ~= vim.NIL and curdir ~= "" then
+		return curdir
+	end
+	return nil
+end
+local function ensure_window_conceal(buf)
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		if vim.api.nvim_win_get_buf(win) == buf then
+			vim.wo[win].conceallevel = 2
+			vim.wo[win].concealcursor = "nvc"
+		end
+	end
+end
+function NetrwUI.render(buf)
 	if not vim.api.nvim_buf_is_valid(buf) then return end
 	if vim.bo[buf].filetype ~= "netrw" then return end
-	vim.api.nvim_buf_clear_namespace(buf, netrw_ns, 0, -1)
-	local lines = get_netrw_lines(buf)
+	vim.api.nvim_buf_clear_namespace(buf, NetrwUI.ns, 0, -1)
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+	local count = #lines
+	if count == 0 then return end
+	local raw_depth = read_netrw_var(buf, "netrw_treedepthstring")
+	local depth_str = (type(raw_depth) == "string" and raw_depth ~= "") and raw_depth or "| "
+	local depth_step = #depth_str
 	local depths = {}
-	for i, line in ipairs(lines) do
-		depths[i] = depth_of(line)
+	local names = {}
+	local has_tree_lines = false
+	for i = 1, count do
+		local d, name = parse_netrw_line(lines[i], depth_str)
+		depths[i] = d
+		names[i] = name
+		if d > 0 then has_tree_lines = true end
 	end
-	local uv = vim.uv or vim.loop
-	local sort_mode = vim.b.netrw_sort_by or vim.g.netrw_sort_by or "name"
-	for i, _ in ipairs(lines) do
+	local is_last = {}
+	local active_depth = {}
+	for i = count, 1, -1 do
 		local d = depths[i]
-		if d > 0 then
-			local is_last = true
-			for j = i + 1, #lines do
-				if depths[j] < d then break end
-				if depths[j] == d then
-					is_last = false
-					break
-				end
+		for k, _ in pairs(active_depth) do
+			if k > d then
+				active_depth[k] = nil
 			end
+		end
+		if d > 0 then
+			is_last[i] = not active_depth[d]
+			active_depth[d] = true
+		end
+	end
+	local sort_mode = tostring(read_netrw_var(buf, "netrw_sort_by") or "name"):lower()
+	local is_size = sort_mode:sub(1, 1) == "s"
+	local is_time = sort_mode:sub(1, 1) == "t"
+	local liststyle = tonumber(read_netrw_var(buf, "netrw_liststyle")) or 0
+	local is_tree = (liststyle == 3) or has_tree_lines
+	local base_dir = get_buf_base_dir(buf, is_tree)
+	local show_meta = (is_size or is_time)
+		and base_dir ~= nil
+		and (liststyle == 0 or liststyle == 3)
+	local branch_stack = {}
+	local dir_stack = {}
+	local slice_unpack = table.unpack or unpack
+	local uv = vim.uv or vim.loop
+	local virt_pos = NetrwUI.has_inline and "inline" or "overlay"
+	local conceal_val = NetrwUI.has_inline and "" or nil
+	local leaf_last = NetrwUI.has_inline and "╰▸ " or "╰─"
+	local leaf_mid = NetrwUI.has_inline and "├▸ " or "├─"
+	for i = 1, count do
+		local line = lines[i]
+		local d = depths[i]
+		local name = names[i]
+		if d > 0 then
 			local prefix_parts = {}
 			for k = 1, d - 1 do
-				local has_more = false
-				for j = i + 1, #lines do
-					if depths[j] < k then break end
-					if depths[j] == k then
-						has_more = true
-						break
-					end
-				end
-				table.insert(prefix_parts, has_more and "│ " or "  ")
+				prefix_parts[k] = branch_stack[k] and "│ " or "  "
 			end
-			table.insert(prefix_parts, is_last and "╰▸ " or "├▸ ")
-			local connector = table.concat(prefix_parts)
-			vim.api.nvim_buf_set_extmark(buf, netrw_ns, i - 1, 0, {
-				end_col = d * 2,
-				conceal = "",
-				virt_text = { { connector, "NetrwConnector" } },
-				virt_text_pos = "inline",
+			prefix_parts[d] = is_last[i] and leaf_last or leaf_mid
+			branch_stack[d] = not is_last[i]
+			vim.api.nvim_buf_set_extmark(buf, NetrwUI.ns, i - 1, 0, {
+				end_col = math.min(d * depth_step, #line),
+				conceal = conceal_val,
+				virt_text = { { table.concat(prefix_parts), "NetrwConnector" } },
+				virt_text_pos = virt_pos,
+				strict = false,
 			})
+			for k = 1, d - 1 do
+				if dir_stack[k] == nil then
+					dir_stack[k] = ""
+				end
+			end
+			dir_stack[d] = name
+			for k = d + 1, #dir_stack do
+				dir_stack[k] = nil
+			end
+		else
+			branch_stack = {}
+			dir_stack = {}
 		end
-		if sort_mode == "size" or sort_mode == "time" then
-			local path = get_fullpath_for_line(i)
-			if path then
-				local stat = uv.fs_stat(path)
-				if stat then
+		if show_meta and not is_netrw_banner(line) and name ~= "" and name ~= "." and name ~= ".." then
+			local full_path = nil
+			if d > 0 then
+				full_path = Helpers.join_path(base_dir, slice_unpack(dir_stack, 1, d))
+			elseif is_tree then
+				full_path = Helpers.norm_path(base_dir)
+			else
+				full_path = Helpers.join_path(base_dir, name)
+			end
+			if full_path and full_path ~= "" then
+				local st = Helpers.stat(full_path) or (uv and uv.fs_lstat and uv.fs_lstat(full_path))
+				if st then
 					local formatted = ""
-					if i == 1 then
-						formatted = ""
-					elseif sort_mode == "size" and stat.type == "file" then
-						formatted = "  " .. format_size(stat.size)
-					elseif sort_mode == "time" then
-						formatted = "  " .. format_time(stat.mtime.sec)
+					if is_size and st.type == "file" then
+						formatted = "  " .. format_size(st.size)
+					elseif is_time and st.mtime then
+						formatted = "  " .. format_time(st.mtime.sec)
 					end
 					if formatted ~= "" then
-						vim.api.nvim_buf_set_extmark(buf, netrw_ns, i - 1, 0, {
+						vim.api.nvim_buf_set_extmark(buf, NetrwUI.ns, i - 1, 0, {
 							virt_text = { { formatted, "NetrwSize" } },
 							virt_text_pos = "eol",
+							strict = false,
 						})
 					end
 				end
@@ -1856,52 +3533,39 @@ local function render_netrw_connectors(buf)
 		end
 	end
 end
-local NetrwSyntaxGI = vim.api.nvim_create_augroup("NetrwSyntax", { clear = true })
-vim.api.nvim_create_autocmd({ "FileType", "BufEnter", "TextChanged" }, {
-	group = NetrwSyntaxGI,
-	pattern = "*",
-	callback = function(args)
-		if vim.bo[args.buf].filetype == "netrw" then
-			vim.api.nvim_set_hl(0, "NetrwSize", { fg = "#E0AF68" })
-			vim.opt_local.conceallevel = 2
-			vim.opt_local.concealcursor = "nc"
-			render_netrw_connectors(args.buf)
+function NetrwUI.render_all()
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
+			NetrwUI.render(buf)
 		end
-	end,
-})
-vim.api.nvim_create_autocmd({ "FocusGained" }, {
-	group = NetrwSyntaxGI,
-	pattern = "*",
-	callback = function()
-		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
-				render_netrw_connectors(buf)
+	end
+end
+function NetrwUI.setup()
+	local group = vim.api.nvim_create_augroup("NetrwSyntax", { clear = true })
+	set_netrw_hl()
+	vim.api.nvim_create_autocmd("ColorScheme", {
+		group = group,
+		pattern = "*",
+		callback = set_netrw_hl,
+	})
+	vim.api.nvim_create_autocmd({ "FileType", "BufWinEnter", "BufEnter", "TextChanged" }, {
+		group = group,
+		pattern = "*",
+		callback = function(args)
+			if vim.bo[args.buf].filetype == "netrw" then
+				ensure_window_conceal(args.buf)
+				NetrwUI.render(args.buf)
 			end
-		end
-	end,
-})
-vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
-	group = NetrwSyntaxGI,
-	pattern = "*",
-	callback = function()
-		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
-				render_netrw_connectors(buf)
-			end
-		end
-	end,
-})
-vim.api.nvim_create_autocmd("ModeChanged", {
-	group = NetrwSyntaxGI,
-	pattern = "*:[vV\x16]*",
-	callback = function()
-		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-			if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "netrw" then
-				render_netrw_connectors(buf)
-			end
-		end
-	end,
-})
+		end,
+	})
+	vim.api.nvim_create_autocmd({ "FocusGained", "WinResized", "VimResized" }, {
+		group = group,
+		pattern = "*",
+		callback = NetrwUI.render_all,
+	})
+end
+NetrwUI.setup()
+_G.NetrwUI = NetrwUI
 
 
 -- Auto-pairs
@@ -1936,7 +3600,7 @@ vim.api.nvim_create_autocmd({"BufEnter"}, {
 	pattern = "*",
 	callback = function()
 		local file_type = vim.bo[0].filetype
-		if in_list(file_type, { "c", "python", "lua", "vim", "rust", "go" }) then
+		if Helpers.in_list(file_type, { "c", "python", "lua", "vim", "rust", "go" }) then
 			vim.opt.colorcolumn = "80"
 		end
 	end
@@ -1947,17 +3611,65 @@ vim.api.nvim_create_autocmd({"BufEnter"}, {
 LSPBootstrapV = vim.api.nvim_create_augroup("LSPBootstrap", { clear = true })
 vim.fn.mkdir(BinDir, "p")
 vim.env.PATH = BinDir..":"..vim.env.PATH
-Servers = {
+local node_name = "node-v26.13.1-linux-x64"
+local node_path = BinDir.."/"..node_name
+local node_url = "https://nodejs.org/dist/v26.13.1/"..node_name..".tar.xz"
+local luals_url = "https://github.com/LuaLS/lua-language-server"
+local cmd_dump_path = vim.fn.stdpath("config").."/.cmd_dumps"
+vim.fn.mkdir(cmd_dump_path, "p")
+
+
+local luals_install_cmd = table.concat({
+	"rm -rf '"..BinDir.."/tmp_lualsp' '"..BinDir.."/lua-language-server-dist' && ",
+	"git clone --depth=1 --recurse-submodules '"..luals_url.."' '"..BinDir.."/tmp_lualsp' && ",
+	"cd '"..BinDir.."/tmp_lualsp' && ",
+	"./make.sh && ",
+	"mv '"..BinDir.."/tmp_lualsp' '"..BinDir.."/lua-language-server-dist'",
+})
+
+local gopls_install_cmd = "GOBIN="..BinDir.." go install golang.org/x/tools/gopls@latest"
+
+local pyright_install_cmd = table.concat({
+				"curl -L -o '"..node_path..".tar.xz' "..node_url.." && ",
+				"tar -xf "..node_path..".tar.xz && ",
+				node_path.."/bin/npm install --prefix '"..BinDir .."' pyright && ",
+				"ln -sf '"..BinDir.."/node_modules/.bin/pyright-langserver' '"..BinDir.."/pyright-langserver' && ",
+				"rm -rf "..node_path..".tar.xz "..node_path
+			})
+
+local rust_analyzer_install_cmd = table.concat({
+			"rm '"..BinDir.."/rust-analyzer_dist' '"..BinDir.."/rust-analyzer_tmp.gz' && ",
+			"mkdir -p '"..BinDir.."/rust-analyzer_dist' && ",
+			"URL=$(curl -s https://api.github.com/repos/rust-lang/rust-analyzer/releases/latest ",
+			"| grep -o '\"browser_download_url\": *\"[^\"]*rust-analyzer-x86_64-unknown-linux-gnu\\.gz\"' ",
+			"| grep -o 'https://[^\"]*') && ",
+			"echo \"Resolved URL: $URL\" && ",
+			"curl -L -o '"..BinDir.."/rust-analyzer_tmp.gz' \"$URL\" && ",
+			"gunzip -c '"..BinDir.."/rust-analyzer_tmp.gz' > '"..BinDir.."/rust-analyzer_dist/rust-analyzer' && ",
+			"chmod +x '"..BinDir.."/rust-analyzer_dist/rust-analyzer' && ",
+			"rm -f '"..BinDir.."/rust-analyzer_tmp.gz'",
+		})
+
+local clangd_install_cmd = table.concat({
+			"rm -rf '"..BinDir.."/clangd_dist' '".. BinDir.."/clangd_tmp.zip' && ",
+			"URL=$(curl -s https://api.github.com/repos/clangd/clangd/releases/latest ",
+			"| grep -o '\"browser_download_url\": *\"[^\"]*clangd-linux-[0-9.]*\\.zip\"' ",
+			"| grep -o 'https://[^\"]*') && ",
+			"echo \"Resolved URL: $URL\" && ",
+			"curl -L -o '"..BinDir.."/clangd_tmp.zip' \"$URL\" && ",
+			"unzip -q '"..BinDir.."/clangd_tmp.zip' -d '"..BinDir.."' && ",
+			"rm -f '"..BinDir.."/clangd_tmp.zip' && ",
+			"mv '"..BinDir.."'/clangd_* '"..BinDir.."/clangd_dist'",
+		})
+
+SERVERS = {
 	python = {
 		name = "pyright",
 		cmd_name = "pyright-langserver",
 		check = function()
 			return vim.fn.executable("pyright-langserver") == 1
 		end,
-		install_cmd = string.format(
-			"npm install --prefix '%s' pyright && ln -sf '%s/node_modules/.bin/pyright-langserver' '%s/pyright-langserver'",
-			BinDir, BinDir, BinDir
-		),
+		install_cmd = pyright_install_cmd,
 		lsp_cmd = { "pyright-langserver", "--stdio" },
 		filetypes = { "python" },
 		root_markers = { "pyproject.toml", "setup.py", ".git" }
@@ -1968,18 +3680,7 @@ Servers = {
 		check = function()
 			return vim.fn.executable(BinDir.."/rust-analyzer_dist/rust-analyzer") == 1
 		end,
-		install_cmd = table.concat({
-			"rm -rf '"..BinDir.."/rust-analyzer_dist' '"..BinDir.."/rust-analyzer_tmp.gz' && ",
-			"mkdir -p '"..BinDir.."/rust-analyzer_dist' && ",
-			"URL=$(curl -s https://api.github.com/repos/rust-lang/rust-analyzer/releases/latest ",
-			"| grep -o '\"browser_download_url\": *\"[^\"]*rust-analyzer-x86_64-unknown-linux-gnu\\.gz\"' ",
-			"| grep -o 'https://[^\"]*') && ",
-			"echo \"Resolved URL: $URL\" && ",
-			"curl -L -o '"..BinDir.."/rust-analyzer_tmp.gz' \"$URL\" && ",
-			"gunzip -c '"..BinDir.."/rust-analyzer_tmp.gz' > '"..BinDir.."/rust-analyzer_dist/rust-analyzer' && ",
-			"chmod +x '"..BinDir.."/rust-analyzer_dist/rust-analyzer' && ",
-			"rm -f '"..BinDir.."/rust-analyzer_tmp.gz'",
-		}),
+		install_cmd = rust_analyzer_install_cmd,
 		lsp_cmd = { BinDir.."/rust-analyzer_dist/rust-analyzer" },
 		filetypes = { "rust" },
 		root_markers = { "Cargo.toml", ".git" }
@@ -1990,17 +3691,7 @@ Servers = {
 		check = function()
 			return vim.fn.executable(BinDir.."/clangd_dist/bin/clangd") == 1
 		end,
-		install_cmd = table.concat({
-			"rm -rf '"..BinDir.."/clangd_dist' '".. BinDir.."/clangd_tmp.zip' && ",
-			"URL=$(curl -s https://api.github.com/repos/clangd/clangd/releases/latest ",
-			"| grep -o '\"browser_download_url\": *\"[^\"]*clangd-linux-[0-9.]*\\.zip\"' ",
-			"| grep -o 'https://[^\"]*') && ",
-			"echo \"Resolved URL: $URL\" && ",
-			"curl -L -o '"..BinDir.."/clangd_tmp.zip' \"$URL\" && ",
-			"unzip -q '"..BinDir.."/clangd_tmp.zip' -d '"..BinDir.."' && ",
-			"rm -f '"..BinDir.."/clangd_tmp.zip' && ",
-			"mv '"..BinDir.."'/clangd_* '"..BinDir.."/clangd_dist'",
-		}),
+		install_cmd = clangd_install_cmd,
 		lsp_cmd = { BinDir.."/clangd_dist/bin/clangd" },
 		filetypes = { "c", "cpp" },
 		root_markers = { "compile_commands.json", ".git" }
@@ -2011,7 +3702,7 @@ Servers = {
 		check = function()
 			return vim.fn.executable(BinDir.."/gopls") == 1
 		end,
-		install_cmd = string.format("GOBIN=%s go install golang.org/x/tools/gopls@latest", BinDir),
+		install_cmd = gopls_install_cmd,
 		lsp_cmd = { BinDir.."/gopls" },
 		filetypes = { "go" },
 		root_markers = { ".git" }
@@ -2022,13 +3713,7 @@ Servers = {
 		check = function()
 			return vim.fn.executable(BinDir.."/lua-language-server-dist/bin/lua-language-server") == 1
 		end,
-		install_cmd = string.format(
-			"rm -rf '%s/tmp_lualsp' '%s/lua-language-server-dist' && " ..
-			"git clone --depth=1 --recurse-submodules https://github.com/LuaLS/lua-language-server '%s/tmp_lualsp' && " ..
-			"cd '%s/tmp_lualsp' && ./make.sh && " ..
-			"mv '%s/tmp_lualsp' '%s/lua-language-server-dist'",
-			BinDir, BinDir, BinDir, BinDir, BinDir, BinDir
-		),
+		install_cmd = luals_install_cmd,
 		lsp_cmd = { BinDir.."/lua-language-server-dist/bin/lua-language-server" },
 		filetypes = { "lua" },
 		root_markers = { ".luarc.json", ".git" },
@@ -2056,23 +3741,31 @@ function BootstrapAndStart(server, bufnr)
 		vim.notify("[Bootstrap] "..server.name.." not found and has no auto-install (install manually)", vim.log.levels.WARN)
 		return
 	end
-	with_job_progress("[Bootstrap] Installing " .. server.name, function(done)
-	  vim.fn.jobstart(server.install_cmd, {
-		cwd = BinDir,
-		on_exit = function(_, code)
-		  if code == 0 then
-			done("[Bootstrap] " .. server.name .. " installed")
-			vim.lsp.start({
-				name = server.name,
-				cmd = server.lsp_cmd,
-				filetypes = server.filetypes,
-				root_dir = vim.fs.root(bufnr, server.root_markers),
-			})
-		  else
-			done("[Bootstrap] failed to install " .. server.name, vim.log.levels.ERROR)
-		  end
-		end,
-	  })
+	local current_date = Helpers.replace_char(os.date(), " :", "_", "g")
+	local install_cmd = Helpers.substitute(server.install_cmd, " && ", "\\\n\t", "g")
+	local content = "Install cmd for server '"..server.name.."'\n\t"..install_cmd.."\n"
+	local file_handle = io.open(cmd_dump_path.."/"..server.name.."InstallCmd"..current_date, "w")
+	if file_handle then
+		file_handle:write(content)
+		file_handle:close()
+	end
+	Helpers.with_job_progress("[Bootstrap] Installing "..server.name, function(done)
+		vim.fn.jobstart(server.install_cmd, {
+			cwd = BinDir,
+			on_exit = function(_, code)
+			  if code == 0 then
+				done("[Bootstrap] "..server.name.." installed")
+				vim.lsp.start({
+					name = server.name,
+					cmd = server.lsp_cmd,
+					filetypes = server.filetypes,
+					root_dir = vim.fs.root(bufnr, server.root_markers),
+				})
+			  else
+				done("[Bootstrap] failed to install "..server.name, vim.log.levels.ERROR)
+			  end
+			end,
+		})
 	end)
 end
 vim.api.nvim_create_autocmd("FileType", {
@@ -2081,7 +3774,7 @@ vim.api.nvim_create_autocmd("FileType", {
 	callback = function(args)
 		local ft = vim.bo[args.buf].filetype
 		local key = (ft == "cpp") and "c" or ft
-		local server = Servers[key]
+		local server = SERVERS[key]
 		if server then
 			BootstrapAndStart(server, args.buf)
 		end
@@ -2160,7 +3853,7 @@ function StatusLineRender(flag)
 		local name = vim.fn.expand("%:t")
 		local focused = vim.g.statusline_winid == vim.api.nvim_get_current_win()
 		if not focused then
-			return "  " .. name
+			return "  "..name
 	end
 		local netrw_line = string.format("%%#%s# 󰙅 Netrw %%*", "MyStlReplace")
 		local prompt = string.format("%%#%s# Sorted by:%%*", "MyNetrwSort")
@@ -2210,7 +3903,7 @@ function StatusLineRender(flag)
 	local file_lines = string.format("%%#%s#  %s %%*", "MyStlFileLines", vim.fn.line(".")..":"..vim.fn.col(".").." ")
 	local focused = vim.g.statusline_winid == vim.api.nvim_get_current_win()
 	if not focused then
-		return "  " .. file_comp
+		return "  "..file_comp
 	end
 	return table.concat({
 		mode_comp, " ", file_comp,
@@ -2275,7 +3968,7 @@ local function preview()
 	local cbuf = vim.api.nvim_get_current_buf()
 	local filetype = vim.bo[cbuf].filetype
 	if vim.api.nvim_win_is_valid(cwin) then
-		local filename = Netrw_get_fullpath_under_cursor()
+		local filename = Netrw.get_fullpath_under_cursor()
 		if filename ~= nil and string.sub(filename, -1) ~= '/' and vim.fn.filereadable(filename) and filetype == "netrw" then
 			local buf = vim.api.nvim_create_buf(false, true)
 			local file_type = vim.filetype.match({ filename = filename })
@@ -2411,13 +4104,13 @@ end
 
 -- Markdown LOAD_IMAGE → Kitty unicode placeholders
 vim.fn.mkdir(BinDir, "p")
-vim.env.PATH = BinDir .. ":" .. vim.env.PATH
+vim.env.PATH = BinDir..":"..vim.env.PATH
 local function ensure_imagemagick()
-	if vim.fn.executable("magick") == 1 or vim.fn.executable(BinDir .. "/magick") == 1 then
+	if vim.fn.executable("magick") == 1 or vim.fn.executable(BinDir.."/magick") == 1 then
 		return true
 	end
 	vim.notify("[Bootstrap] Downloading portable ImageMagick AppImage...")
-	local out = BinDir .. "/magick"
+	local out = BinDir.."/magick"
 	local cmd = string.format(
 		"curl -L -o '%s' 'https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-35/ImageMagick-7.1.2-35-gcc-x86_64.AppImage' && chmod +x '%s'",
 		out, out
@@ -2449,7 +4142,7 @@ if is_kitty then
 	local next_id = 1
 	local transmitted = {}
 	local function ensure_hl(id)
-		local name = "KittyImg" .. id
+		local name = "KittyImg"..id
 		if vim.fn.hlexists(name) == 0 then
 			local r = math.floor(id / 65536) % 256
 			local g = math.floor(id / 256) % 256
@@ -2466,7 +4159,7 @@ if is_kitty then
 		local ext = url:match("%.([%w]+)$")
 		if not ext or #ext > 4 then ext = "png" end
 		local hash = vim.fn.sha256(url)
-		local cache_dir = vim.fn.stdpath("cache") .. "/markdown_images"
+		local cache_dir = vim.fn.stdpath("cache").."/markdown_images"
 		vim.fn.mkdir(cache_dir, "p")
 		local local_path = string.format("%s/%s.%s", cache_dir, hash, ext)
 		if vim.fn.filereadable(local_path) == 1 then
@@ -2489,7 +4182,7 @@ if is_kitty then
 	local function prepare_image(path)
 		local ext = path:sub(-4):lower()
 		if ext == ".png" then return path end
-		local tmp_path = "/tmp/kitty_" .. vim.fn.sha256(path) .. ".png"
+		local tmp_path = "/tmp/kitty_"..vim.fn.sha256(path)..".png"
 		if vim.fn.filereadable(tmp_path) == 0 then
 			local magick = vim.fn.executable("magick") == 1 and "magick" or "convert"
 			if vim.fn.executable(magick) == 1 then
@@ -2570,7 +4263,7 @@ if is_kitty then
 		return nil, nil
 	end
 	local function transmit(id, path, cols, rows)
-		local key = id .. ":" .. cols .. "x" .. rows
+		local key = id..":"..cols.."x"..rows
 		if transmitted[key] then return end
 		local b64 = vim.base64.encode(vim.fn.fnamemodify(path, ":p")):gsub("%-", "/")
 		local chunks = {}
@@ -2584,12 +4277,12 @@ if is_kitty then
 			else
 				ctrl = string.format("m=%d", (i == #chunks) and 0 or 1)
 			end
-			write("\x1b_G" .. ctrl .. ";" .. chunk .. "\x1b\\")
+			write("\x1b_G"..ctrl..";"..chunk.."\x1b\\")
 			uv.sleep(1)
 		end
 		transmitted[key] = true
 		local control_p = string.format("a=p,i=%d,p=%d,c=%d,r=%d,q=2,U=1,C=1", id, id, cols, rows)
-		write("\x1b_G" .. control_p .. "\x1b\\")
+		write("\x1b_G"..control_p.."\x1b\\")
 	end
 	local function refresh(buf)
 		if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].filetype ~= "markdown" then return end
@@ -2645,15 +4338,15 @@ if is_kitty then
 						local row_d = diacritic(r)
 						local cells = {}
 						for c = 0, cols - 1 do
-							cells[#cells + 1] = PH .. row_d .. diacritic(c)
+							cells[#cells + 1] = PH..row_d..diacritic(c)
 						end
 						virt[#virt + 1] = { { table.concat(cells), hl } }
 					end
 					vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { end_col = #line, conceal = "" })
 					local draw_above = (i >= total_lines)
-					vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { 
-						virt_lines = virt, 
-						virt_lines_above = draw_above 
+					vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, {
+						virt_lines = virt,
+						virt_lines_above = draw_above
 					})
 				end
 			end
@@ -2685,11 +4378,9 @@ vim.keymap.set("n", "<Leader>n", ":next<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>p", ":prev<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>bf", ":let g:netrw_banner = 1<CR>:Ex<CR>", { silent = true })
 vim.keymap.set("n", "<Leader>sc", ":so ~/.config/nvim/init.lua <CR>", { silent = true })
-vim.keymap.set("n", "<Leader>ft", Open_file_tree, { silent = true })
 vim.keymap.set("n", "<Leader>o", ":only<CR>", { silent = true })
-vim.keymap.set("n", Config.toggle_keymap, function()
-	ToggleTerminal(nil)
-end, { noremap = true, silent = true })
+
+
 vim.keymap.set("n", "<Leader>man", function()
 	local cword = vim.fn.expand('<cword>')
 	if cword == "" then return end
@@ -2727,9 +4418,6 @@ vim.keymap.set("n", "<Leader>help", function()
 end, { noremap = true, silent = true })
 vim.keymap.set("n", "<Leader>q", "<C-\\><C-n>:q!<CR>", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>y", '"+y', { silent = true })
-vim.keymap.set("n", "<Leader><Esc>", function()
-	Forty_Two_pattern()
-end, { silent = true })
 vim.keymap.set("n", "<CR>", "za", { silent = true })
 vim.keymap.set({ "n", "v" }, "<Leader>qa", ":qa!<CR>", { silent = true })
 vim.keymap.set("t", "<Leader>qa", "<C-\\><C-n>:qa!<CR>", { silent = true })
@@ -2744,9 +4432,9 @@ local function visual_wrap(left, right)
 	return function()
 		local m = vim.api.nvim_get_mode().mode
 		local map = {
-			v = "c" .. left .. '<C-r>"' .. right .. "<Esc>",
-			V = [[:s/\%V.*\%V/]] .. left .. "&" .. right .. [[/g<CR>]],
-			["\22"] = "c" .. left .. '<C-r>"' .. right .. "<Esc>",
+			v = "c"..left..'<C-r>"'..right.."<Esc>",
+			V = [[:s/\%V.*\%V/]]..left.."&"..right..[[/g<CR>]],
+			["\22"] = "c"..left..'<C-r>"'..right.."<Esc>",
 		}
 		return map[m]
 	end
