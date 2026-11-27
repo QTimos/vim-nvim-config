@@ -532,6 +532,7 @@ function Helpers.print_table(table_obj, indent, visited)
 	visited[table_obj] = nil
 end
 function Helpers.download_from_url(url, opts, cb)
+	local DEFAULT_USER_AGENT = "nvim-download.lua (+https://github.com/QTimos/vim-nvim-config)"
 	local PY_SCRIPT = [[
     import sys, json, urllib.request, urllib.error
     url, out, timeout = sys.argv[1], sys.argv[2], float(sys.argv[3])
@@ -587,8 +588,21 @@ function Helpers.download_from_url(url, opts, cb)
 	if type(url) ~= "string" or not url:lower():match("^https://") then
 		return fail_async("only https:// URLs are supported: " .. tostring(url))
 	end
+	local headers = opts.headers or {}
+	do
+		local has_ua = false
+		for k in pairs(headers) do
+			if type(k) == "string" and k:lower() == "user-agent" then
+				has_ua = true
+				break
+			end
+		end
+		if not has_ua then
+			headers = vim.tbl_extend("force", headers, { ["User-Agent"] = opts.user_agent or DEFAULT_USER_AGENT })
+		end
+	end
 	local hdr = {}
-	for k, v in pairs(opts.headers or {}) do
+	for k, v in pairs(headers) do
 		k, v = tostring(k), tostring(v)
 		if k == "" or k:find("[:\r\n]") or v:find("[\r\n]") then
 			return fail_async("invalid header: " .. k)
@@ -605,14 +619,71 @@ function Helpers.download_from_url(url, opts, cb)
 			return fail_async("Cannot create directory: " .. parent)
 		end
 	end
+	local function read_file(path, max_bytes)
+		local f = io.open(path, "rb")
+		if not f then return nil, "cannot read downloaded file" end
+		local data = max_bytes and (f:read(max_bytes) or "") or (f:read("*a") or "")
+		f:close()
+		return data
+	end
+	local function looks_like_error_page(head)
+		local lower = vim.trim(head):lower()
+		return lower:sub(1, 1) == "<" or lower:find("^<!doctype") ~= nil or lower:find("^<html") ~= nil
+	end
+	local function validate_payload(full_data_or_nil, path)
+		local data = full_data_or_nil
+		local need_full = opts.verify and opts.verify.sha256 ~= nil
+		if data == nil and need_full then
+			local d, err = read_file(path)
+			if not d then return err end
+			data = d
+		end
+		local head
+		if data ~= nil then
+			head = data:sub(1, 512)
+		else
+			local h, err = read_file(path, 512)
+			if not h then return err end
+			head = h
+		end
+		if looks_like_error_page(head) then
+			return "downloaded content looks like an HTML error page, not the expected payload"
+		end
+		if opts.min_size then
+			local size
+			if data ~= nil then
+				size = #data
+			else
+				local ok, stat = pcall(vim.uv.fs_stat, path)
+				size = ok and stat and stat.size or nil
+			end
+			if size and size < opts.min_size then
+				return string.format(
+					"downloaded content is only %d bytes (expected at least %d) - likely an error response",
+					size, opts.min_size)
+			end
+		end
+		if need_full then
+			local ok, actual = pcall(vim.fn.sha256, data)
+			if not ok then
+				return "cannot verify checksum: vim.fn.sha256() is unavailable in this Neovim build"
+			end
+			if actual:lower() ~= opts.verify.sha256:lower() then
+				return string.format("checksum mismatch: expected sha256 %s, got %s", opts.verify.sha256, actual)
+			end
+		end
+		return nil
+	end
 	local function finish()
 		if want_string then
-			local f = io.open(part_path, "rb")
-			if not f then return done("cannot read downloaded file") end
-			local data = f:read("*a")
-			f:close()
-			return done(nil, data or "")
+			local data, err = read_file(part_path)
+			if not data then return done(err) end
+			local verr = validate_payload(data, part_path)
+			if verr then return done(verr) end
+			return done(nil, data)
 		end
+		local verr = validate_payload(nil, part_path)
+		if verr then return done(verr) end
 		local ok, err = vim.uv.fs_rename(part_path, outpath)
 		if not ok then
 			return done("cannot move download into place: " .. tostring(err))
